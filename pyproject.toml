@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vfund"
+version = "0.0.1"
+description = "An open-source quant research & trading platform — open tools, private edge."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["quant", "trading", "backtesting", "crypto", "finance", "research"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "polars>=1.0",
+    "numpy>=1.24",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.7"]
+dev = ["pytest>=7.0", "matplotlib>=3.7"]
+
+[project.scripts]
+vfund = "vfund.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-handle/vfund"
+Repository = "https://github.com/your-handle/vfund"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vfund"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
