@@ -15,9 +15,10 @@ env/
 .ruff_cache/
 .ipynb_checkpoints/
 
-# VFund data & results (local-first — never commit market data or runs)
-data/
-results/
+# VFund data & results (local-first — never commit market data or runs).
+# Anchored to the repo root so they do NOT match the vfund/data source package.
+/data/
+/results/
 *.parquet
 *.png
 
