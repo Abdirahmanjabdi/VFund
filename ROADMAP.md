@@ -109,7 +109,17 @@ not backtest returns, decide whether an edge is real.
   net Sharpe is more like 1-2; the tail risk (funding/basis turns violently
   negative in deleveraging events) is the thing to model next. Still: the right
   *kind* of edge — structural, deep, scalable — to complement the small-cap book.
-- Next: model basis/crash risk + real carry costs for a trustworthy carry Sharpe.
+- Basis/crash risk modelled with real perp prices (`examples/funding_carry_basis.py`):
+  delta-neutral hedge contains drawdowns (MaxDD a few %); real killers are thin
+  margin (cost-sensitive) + funding-regime dependence — a modest yield, not a
+  7-Sharpe.
+- Intraday liquidation modelled via daily perp highs (`examples/carry_liquidation.py`):
+  **the carry's survival hinges entirely on margin setup.** Siloed leveraged
+  shorts get wiped out by squeezes (DOGE +412% intraday; siloed 10x → −100%).
+  Cross-margined (spot collateralises perp, how desks run it) → barely liquidates,
+  safe. Verdict: viable ONLY cross-margined, modest leverage, ideally BTC/ETH.
+- Next: combine carry (high-capacity yield) with the small-cap 3-sleeve (alpha)
+  as a two-engine book; intraday data for a finer liquidation model.
 
 ## v0.2 — on-chain fundamentals (in progress)
 - ✅ DefiLlama TVL ingest (`data/onchain.py`, free, no key) + engine/context
