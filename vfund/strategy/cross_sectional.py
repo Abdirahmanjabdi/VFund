@@ -30,7 +30,7 @@ class PanelContext:
     so, as in the single-asset engine, the future is simply not in scope.
     """
 
-    __slots__ = ("i", "_closes", "symbols", "_funding")
+    __slots__ = ("i", "_closes", "symbols", "_funding", "_volumes")
 
     def __init__(
         self,
@@ -38,11 +38,13 @@ class PanelContext:
         closes: np.ndarray,
         symbols: list[str],
         funding: np.ndarray | None = None,
+        volumes: np.ndarray | None = None,
     ):
         self.i = i
         self._closes = closes
         self.symbols = symbols
         self._funding = funding
+        self._volumes = volumes
 
     @property
     def closes(self) -> np.ndarray:
@@ -54,6 +56,13 @@ class PanelContext:
         if self._funding is None:
             return None
         return self._funding[: self.i + 1]
+
+    @property
+    def volumes(self) -> np.ndarray | None:
+        """Base-asset volumes up to now, or None."""
+        if self._volumes is None:
+            return None
+        return self._volumes[: self.i + 1]
 
     @property
     def n_seen(self) -> int:
@@ -166,6 +175,35 @@ class CrossSectionalValue(CrossSectionalStrategy):
         ma = closes[-self.lookback :].mean(axis=0)
         distance = closes[-1] / ma - 1.0
         return -distance  # long below-MA (cheap), short above-MA (rich)
+
+
+class CrossSectionalSize(CrossSectionalStrategy):
+    """The size effect: long small coins, short large ones.
+
+    In Liu, Tsyvinski & Wu (J. Finance 2022), size is one of just three factors
+    that price the crypto cross-section — small coins earn higher returns. We
+    lack circulating supply, so we proxy 'size' by trailing dollar volume
+    (price x volume), a liquidity measure that tracks it closely. Score = minus
+    log dollar volume, so the smallest/least-liquid names are longed.
+
+    This edge lives in names too small for large funds to touch — precisely the
+    capacity-constrained niche a nimble book can exploit.
+    """
+
+    def __init__(self, lookback: int = 30):
+        if lookback < 1:
+            raise ValueError("lookback must be >= 1")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        vols = ctx.volumes
+        closes = ctx.closes
+        if vols is None:
+            raise ValueError("CrossSectionalSize needs volume data in the panel")
+        if closes.shape[0] < self.lookback:
+            return np.full(closes.shape[1], np.nan)
+        dollar_vol = (closes[-self.lookback :] * vols[-self.lookback :]).mean(axis=0)
+        return -np.log(np.maximum(dollar_vol, 1e-9))  # long small, short large
 
 
 class TimeSeriesTrend(CrossSectionalStrategy):

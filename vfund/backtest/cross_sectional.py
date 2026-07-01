@@ -16,6 +16,8 @@ front and centre rather than an afterthought.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import polars as pl
 
@@ -40,12 +42,21 @@ class CrossSectionalBacktester:
         interval: str = "1h",
         initial_cash: float = 10_000.0,
         funding: pl.DataFrame | None = None,
+        vol_target: float | None = None,
+        vol_lookback: int = 30,
+        max_leverage: float = 3.0,
     ):
         panel = validate_panel(panel)
         wide = pivot_to_wide(panel, "close")
         self.timestamps = wide["timestamp"]
         self.symbols = [c for c in wide.columns if c != "timestamp"]
         self.closes = wide.select(self.symbols).to_numpy()  # (T, N)
+
+        # Volumes aligned to the same timeline (for the size factor). Align by an
+        # inner join on close's timestamps so shapes always match.
+        vwide = pivot_to_wide(panel, "volume")
+        vwide = wide.select("timestamp").join(vwide, on="timestamp", how="left")
+        self.volumes = vwide.select(self.symbols).fill_null(0.0).to_numpy()
 
         # Optional funding overlay: `event` pays into P&L on funding bars,
         # `prevailing` is the forward-filled rate the strategy trades on.
@@ -61,6 +72,9 @@ class CrossSectionalBacktester:
         self.leverage = leverage
         self.top_k = top_k
         self.neutralize = neutralize
+        self.vol_target = vol_target
+        self.vol_lookback = max(5, int(vol_lookback))
+        self.max_leverage = max_leverage
         self.cost_rate = cost_bps / 10_000.0
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
@@ -108,12 +122,17 @@ class CrossSectionalBacktester:
 
             # Rebalance on schedule.
             if t % self.rebalance_every == 0:
-                ctx = PanelContext(t, C, self.symbols, funding=self.funding_prevailing)
+                ctx = PanelContext(
+                    t, C, self.symbols,
+                    funding=self.funding_prevailing, volumes=self.volumes,
+                )
                 scores = self.strategy.scores(ctx)
                 w_target = scores_to_weights(
                     scores, leverage=self.leverage, top_k=self.top_k,
                     neutralize=self.neutralize,
                 )
+                if self.vol_target is not None:
+                    w_target = self._vol_scale(w_target, rets, t)
                 turnover = float(np.abs(w_target - w_drifted).sum())
                 cost = turnover * self.cost_rate
                 eq *= 1.0 - cost
@@ -160,3 +179,26 @@ class CrossSectionalBacktester:
                 "rebalance_every": self.rebalance_every,
             },
         )
+
+    def _vol_scale(self, weights: np.ndarray, rets: np.ndarray, t: int) -> np.ndarray:
+        """Scale weights so the book's predicted volatility hits ``vol_target``.
+
+        Estimates ex-ante portfolio vol from the recent return covariance
+        (``sqrt(w' Σ w)``, annualised). High recent vol -> smaller book, and vice
+        versa — the standard managed-futures risk control. Capped at
+        ``max_leverage`` gross so a calm patch can't over-lever.
+        """
+        lo = max(1, t - self.vol_lookback + 1)
+        window = rets[lo : t + 1]
+        if window.shape[0] < 5:
+            return weights
+        cov = np.atleast_2d(np.cov(window, rowvar=False))
+        var = float(weights @ cov @ weights)
+        pred_vol = math.sqrt(max(var, 0.0) * self.bars_per_year)
+        if pred_vol <= 1e-9:
+            return weights
+        weights = weights * (self.vol_target / pred_vol)
+        gross = float(np.abs(weights).sum())
+        if gross > self.max_leverage:
+            weights = weights * (self.max_leverage / gross)
+        return weights

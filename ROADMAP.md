@@ -51,8 +51,14 @@ not backtest returns, decide whether an edge is real.
   momentum in Liu-Tsyvinski-Wu, *J. Finance* 2022).
 - ✅ `TimeSeriesTrendEnsemble` — multi-horizon trend (fixes single-lookback
   fragility); slightly lower point estimate (alpha t ≈ 1.7) but more robust.
-- Next on trend: vol-targeting/position sizing, more cycles/universes, and
-  deflated-Sharpe on the lookback search before trusting it as tradable.
+- ✅ Vol-targeting (managed-futures risk control) in the engine; `CrossSectionalSize`
+  (size factor, Liu-Tsyvinski-Wu); `examples/build_edge.py` combines trend+size.
+  **Combined portfolio (full cycle, beta-adjusted): Sharpe 1.58, max DD -29%
+  (vs -79% buy&hold), alpha ~33%/yr with t ≈ 2.7**, trend/size correlation ≈ 0.
+  Two weakly-correlated, beta-adjusted-real edges beat either alone.
+- Next (to move from "promising" to "tradable"): run the combined book through
+  the robustness harness (universe bootstrap + deflated Sharpe on the whole
+  search), more bear cycles, true market-cap for size, and short-side frictions.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples
