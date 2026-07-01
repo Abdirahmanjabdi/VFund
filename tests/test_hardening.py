@@ -44,6 +44,19 @@ def test_dd_scale_curve():
     assert 0.3 < mid < 1.0
 
 
+def test_fill_rate_reduces_turnover():
+    panel = generate_gbm_panel(10, 400, interval="1d", reversion=0.2, seed=2)
+    full = CrossSectionalBacktester(
+        panel, CrossSectionalReversal(1), rebalance_every=1, cost_bps=0, interval="1d"
+    ).run()
+    partial = CrossSectionalBacktester(
+        panel, CrossSectionalReversal(1), rebalance_every=1, cost_bps=0, interval="1d",
+        fill_rate=0.5,
+    ).run()
+    # Only filling half of each trade means less of the book turns over.
+    assert partial.trades["turnover"].mean() < full.trades["turnover"].mean()
+
+
 def test_circuit_breaker_cuts_losses_in_drawdown():
     # Short a rising market -> sustained drawdown; de-risking should lose less.
     panel = generate_gbm_panel(6, 400, interval="1d", market_vol=0.1, seed=3)

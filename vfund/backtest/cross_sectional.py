@@ -59,6 +59,7 @@ class CrossSectionalBacktester:
         dd_derisk_start: float | None = None,
         dd_derisk_full: float = 0.30,
         dd_derisk_floor: float = 0.3,
+        fill_rate: float = 1.0,
         allow_ragged: bool = True,
     ):
         panel = validate_panel(panel)
@@ -108,7 +109,8 @@ class CrossSectionalBacktester:
         self.dd_derisk_start = dd_derisk_start
         self.dd_derisk_full = dd_derisk_full
         self.dd_derisk_floor = dd_derisk_floor
-        self.cost_rate = cost_bps / 10_000.0
+        self.fill_rate = float(fill_rate)  # maker model: fraction of a trade that fills
+        self.cost_rate = cost_bps / 10_000.0  # may be negative (maker rebate)
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
         self.initial_cash = float(initial_cash)
@@ -131,7 +133,7 @@ class CrossSectionalBacktester:
         # can't be precomputed; without it we precompute the rebalance schedule
         # and hand the T-length loop to the native Rust core. Results are
         # identical to the Python loop (verified in tests/test_sim.py).
-        if HAVE_RUST and self.dd_derisk_start is None:
+        if HAVE_RUST and self.dd_derisk_start is None and self.fill_rate == 1.0:
             return self._run_fast(rets, tradable)
         return self._run_py(rets, tradable)
 
@@ -207,6 +209,9 @@ class CrossSectionalBacktester:
                 w_target = self._target_weights(t, rets)
                 if self.dd_derisk_start is not None:
                     w_target = w_target * self._dd_scale(eq / peak - 1.0)
+                if self.fill_rate < 1.0:
+                    # Maker model: only part of each intended trade actually fills.
+                    w_target = w_drifted + self.fill_rate * (w_target - w_drifted)
                 turnover = float(np.abs(w_target - w_drifted).sum())
                 cost = turnover * self.cost_rate
                 eq *= 1.0 - cost

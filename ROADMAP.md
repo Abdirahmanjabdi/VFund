@@ -116,8 +116,19 @@ not backtest returns, decide whether an edge is real.
   (scalable but low return). See `examples/capacity.py`.
 - ✅ Drawdown **circuit-breaker** (`dd_derisk_*`): de-risk exposure in deep
   drawdowns — cut worst drawdown ~47% → ~30%, trading some return for safety.
-- Next hardening: maker-fill modelling (revive reversal), liquidity-aware
-  slippage, expand delisted set.
+- ✅ Diversification: added the on-chain sleeve to trend+size (near-uncorrelated).
+  3-sleeve book raised Sharpe (IS 1.19→1.60, OOS 0.57→0.66) and halved OOS
+  drawdown (−24%→−11%) for ~the same return — held out-of-sample. See
+  `examples/diversified.py`.
+- ✅ Maker execution model (`fill_rate`, negative `cost_bps` for rebates):
+  reversal is a *market-making* edge — dead as a taker (Sharpe −37 at 10bp),
+  strong only when earning the rebate (Sharpe ~4.8 at −1bp / 50% fill), dead
+  again at a +1bp maker fee. See `examples/maker_reversal.py`. **Caveat: the fill
+  model ignores adverse selection (you get filled exactly when the market moves
+  against you) — the real maker killer — so those Sharpes are optimistic. Needs
+  a proper order-book / tick simulator to validate.**
+- Next: order-book/tick reconstruction + adverse-selection modelling; liquidity-
+  aware slippage; expand delisted set.
 
 ## v0.3 — native core (Rust, optional)
 - ✅ Isolated the simulation hot loop into `vfund/backtest/sim.py` (`simulate_py`,
