@@ -1,5 +1,9 @@
 # VFund
 
+[![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **An open-source quant research & trading platform — open tools, private edge.**
 
 VFund is a local-first toolkit for systematic trading research. Ingest market
@@ -7,8 +11,13 @@ data, backtest strategies *without fooling yourself*, and measure performance
 the way a real fund does. The tools are open source. The edge you discover with
 them is yours to keep.
 
-> **Status:** v0 — the honest data → backtest → report loop works end to end on
-> free crypto data. This is the foundation everything else is built on.
+📖 **New here? Read the [case study](docs/CASE_STUDY.md)** — the honest story of
+building a platform that rigorously killed most of its own best ideas (and found
+a differentiated on-chain lead). See also [docs/OVERVIEW.md](docs/OVERVIEW.md).
+
+> **Status:** a working research platform — honest backtesting, walk-forward +
+> robustness validation, survivorship-corrected data, and a live forward
+> paper-trading loop. No confirmed edge yet; one promising on-chain lead.
 
 ---
 
