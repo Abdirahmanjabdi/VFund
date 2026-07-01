@@ -180,6 +180,7 @@ def cmd_research(args) -> int:
         top_k=args.top_k,
         neutralize=not (args.directional or args.hypothesis == "trend"),
         cost_bps=args.cost_bps,
+        short_cost_bps_annual=args.short_cost_bps_annual,
         interval=args.interval,
     )
 
@@ -256,6 +257,8 @@ def _add_xs_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--directional", action="store_true",
                    help="net long/short book (auto for trend); else dollar-neutral")
     p.add_argument("--cost-bps", type=float, default=10.0)
+    p.add_argument("--short-cost-bps-annual", type=float, default=0.0,
+                   help="annualised financing charged on short notional")
     p.add_argument("--plot", metavar="PNG", help="save an equity/drawdown chart")
 
 

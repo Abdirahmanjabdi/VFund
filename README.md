@@ -186,10 +186,13 @@ vfund paper --data data/uni_daily.parquet --state data/paper.json --start-equity
 The combined book passed *in-sample* robustness. That is **not** proof it makes
 money live. Honest caveats, in order of severity:
 
-1. **Survivorship bias.** The universe is coins that *survived* 2021-2024. Coins
-   that pumped and died (LUNA, FTT, …) are excluded, flattering a book that
-   shorts hot names and holds survivors. Fixing it needs point-in-time universe
-   data — the top open item.
+1. **Survivorship bias (partially addressed).** The engine is now ragged (coins
+   enter/exit as listed/delisted) and can run a broad auto-fetched universe, and
+   short-financing costs are modelled. This *revealed* the bias: the hand-picked
+   survivor universe's in-sample Sharpe (1.51) drops to ~0.9 on a broad 39-coin
+   universe. But "top by volume" still excludes truly dead coins (LUNA, FTT, …),
+   so a clean fix needs point-in-time constituent data. See
+   [`examples/survivorship_check.py`](examples/survivorship_check.py).
 2. **One bear cycle (n=1).** The crisis-alpha rests on a single 2022 crash.
 3. **Multiple testing.** The Deflated Sharpe adjusts for configs in one script,
    not the whole research search — true significance is lower.

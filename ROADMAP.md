@@ -67,10 +67,19 @@ not backtest returns, decide whether an edge is real.
   led). In-sample robustness — even Deflated Sharpe 99% — did **not** survive
   live time. This is the whole point of the platform: we found it on paper, not
   with real money.
-- **Biggest remaining risk — survivorship bias:** the universe is coins that
-  *survived*; delisted/dead coins are excluded, inflating in-sample results.
-- Where next: this edge is not tradable. Keep searching for signals that persist
-  OOS; fix survivorship; model short-side frictions; expect most ideas to die.
+- ✅ **Survivorship + execution realism (partial).** Ragged engine (coins
+  enter/exit as listed/delisted — `pivot_to_wide(drop_incomplete=False)`);
+  short-financing costs (`short_cost_bps_annual`); broader auto-fetched universe
+  with a stablecoin/peg/min-history filter (`examples/survivorship_check.py`).
+  **Finding:** the survivor universe's in-sample Sharpe (1.51) was inflated — on
+  a broad 39-coin universe it falls to ~0.9; short costs shave another ~0.2. But
+  the broad universe held up out-of-sample (OOS Sharpe ~0.46 after short costs)
+  where the narrow one went negative — modest, consistent, more believable.
+- **Still not fully fixed:** "top by current volume" is itself current-winner
+  biased and excludes truly dead coins — a clean fix needs point-in-time
+  constituent data. Treat the broad-universe OOS as encouraging, not confirmed.
+- Where next: point-in-time universe; maker-fill modelling; more OOS as it
+  accrues; forward paper-trade any candidate.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

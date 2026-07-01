@@ -43,16 +43,20 @@ class CrossSectionalBacktester:
         vol_target: float | None = None,
         vol_lookback: int = 30,
         max_leverage: float = 3.0,
+        short_cost_bps_annual: float = 0.0,
+        allow_ragged: bool = True,
     ):
         panel = validate_panel(panel)
-        wide = pivot_to_wide(panel, "close")
+        # Ragged by default: coins enter/exit the cross-section as they were
+        # actually listed/delisted (nulls outside their life), instead of forcing
+        # every coin to span all history — the survivorship-reducing choice.
+        wide = pivot_to_wide(panel, "close", drop_incomplete=not allow_ragged)
         self.timestamps = wide["timestamp"]
         self.symbols = [c for c in wide.columns if c != "timestamp"]
-        self.closes = wide.select(self.symbols).to_numpy()  # (T, N)
+        self.closes = wide.select(self.symbols).to_numpy()  # (T, N), may hold NaN
 
-        # Volumes aligned to the same timeline (for the size factor). Align by an
-        # inner join on close's timestamps so shapes always match.
-        vwide = pivot_to_wide(panel, "volume")
+        # Volumes aligned to the same timeline (for the size factor).
+        vwide = pivot_to_wide(panel, "volume", drop_incomplete=False)
         vwide = wide.select("timestamp").join(vwide, on="timestamp", how="left")
         self.volumes = vwide.select(self.symbols).fill_null(0.0).to_numpy()
 
@@ -73,6 +77,7 @@ class CrossSectionalBacktester:
         self.vol_target = vol_target
         self.vol_lookback = max(5, int(vol_lookback))
         self.max_leverage = max_leverage
+        self.short_cost_annual = short_cost_bps_annual / 10_000.0
         self.cost_rate = cost_bps / 10_000.0
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
@@ -82,11 +87,16 @@ class CrossSectionalBacktester:
         C = self.closes
         T, N = C.shape
         if T < 3:
-            raise ValueError("need at least 3 aligned bars to backtest")
+            raise ValueError("need at least 3 bars to backtest")
 
-        # Per-bar simple returns; row t is the return from t-1 to t.
+        # Per-bar simple returns; row t is the return from t-1 to t. On a ragged
+        # panel, returns touching a null (pre-listing or post-delisting) are set
+        # to 0 — a held coin that delists simply stops contributing, and we exit
+        # it below. Fully-aligned panels have no nulls, so behaviour is unchanged.
         rets = np.zeros_like(C)
         rets[1:] = C[1:] / C[:-1] - 1.0
+        rets = np.where(np.isfinite(rets), rets, 0.0)
+        tradable = np.isfinite(C)
 
         equity = np.empty(T)
         equity[0] = self.initial_cash
@@ -94,29 +104,32 @@ class CrossSectionalBacktester:
 
         w_active = np.zeros(N)  # weights currently held (start flat)
         gross_exposure = np.zeros(T)
+        per_bar_short_cost = self.short_cost_annual / self.bars_per_year
 
         reb_idx, reb_turn, reb_cost, reb_eq = [], [], [], []
 
         for t in range(1, T):
-            # Earn the return on the weights set at the previous bar: price move
-            # plus, if this bar pays funding, the funding cashflow. A short
-            # position (w<0) in a positive-funding perp *receives* funding, hence
-            # the minus sign.
+            # Earn the return on the weights set at the previous bar: price move,
+            # any funding cashflow (a short in positive funding *receives* it,
+            # hence the minus sign), minus financing paid to hold shorts.
             price_ret = float(w_active @ rets[t])
             funding_ret = (
                 -float(w_active @ self.funding_event[t])
                 if self.funding_event is not None
                 else 0.0
             )
-            port_ret = price_ret + funding_ret
+            short_ret = -float(np.abs(np.minimum(w_active, 0.0)).sum()) * per_bar_short_cost
+            port_ret = price_ret + funding_ret + short_ret
             eq *= 1.0 + port_ret
             growth = 1.0 + price_ret  # weights drift with prices, not cashflows
 
-            # Drift the weights forward with realised returns.
+            # Drift the weights forward with realised returns, then force-exit any
+            # coin that is no longer tradable this bar (delisted -> to cash).
             if growth != 0.0:
                 w_drifted = w_active * (1.0 + rets[t]) / growth
             else:  # pragma: no cover - portfolio wiped out
                 w_drifted = w_active.copy()
+            w_drifted = np.where(tradable[t], w_drifted, 0.0)
 
             # Rebalance on schedule.
             if t % self.rebalance_every == 0:
