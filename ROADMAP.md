@@ -84,11 +84,18 @@ not backtest returns, decide whether an edge is real.
   badly inflated). On the broad universe it held up — broad+dead (80 coins,
   10%/yr shorts): full 0.86, IS 1.00, **OOS 0.46** — positive in both periods,
   the most credible number yet.
-- **Remaining caveat:** shorting microcaps into delisting is often impossible
-  (no borrow); the flat short-cost model makes those short profits optimistic.
-  Also "top by volume" retains current-winner bias, and the OOS window has been
-  looked at repeatedly. Next: model no-borrow/hard-to-short; maker fills;
-  forward paper-trade; expand the delisted set.
+- ✅ **Hard-to-short model** (`min_short_dollar_volume`): a coin is shortable only
+  with enough trailing liquidity — no look-ahead, and fading coins block their
+  own shorts. **Surprise finding:** forbidding illiquid shorts *improved* the
+  broad+dead book (OOS Sharpe 0.46 → 0.53-0.57, IS ~1.2). The edge lives in
+  liquid shorts (majors) + small-cap longs, not in shorting dust. It survived
+  every honesty adjustment thrown at it.
+- **Where it stands:** strongest candidate found — broad + dead coins + short
+  costs + no-borrow → IS ~1.2, OOS ~0.55, positive in both periods. BUT the
+  2025-26 OOS has been examined many times (credibility burned); the only clean
+  test left is forward paper-trading on untouched 2026+ data.
+- Next: forward paper-trade; maker-fill modelling; expand delisted set; model
+  small-cap long-side liquidity/capacity limits.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples
