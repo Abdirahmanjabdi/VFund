@@ -52,6 +52,11 @@ class CrossSectionalBacktester:
         short_cost_bps_annual: float = 0.0,
         min_short_dollar_volume: float | None = None,
         short_dv_lookback: int = 30,
+        capacity_aum: float | None = None,
+        max_participation: float = 0.02,
+        dd_derisk_start: float | None = None,
+        dd_derisk_full: float = 0.30,
+        dd_derisk_floor: float = 0.3,
         allow_ragged: bool = True,
     ):
         panel = validate_panel(panel)
@@ -96,6 +101,11 @@ class CrossSectionalBacktester:
         self.short_cost_annual = short_cost_bps_annual / 10_000.0
         self.min_short_dv = min_short_dollar_volume
         self.short_dv_lookback = max(5, int(short_dv_lookback))
+        self.capacity_aum = capacity_aum
+        self.max_participation = max_participation
+        self.dd_derisk_start = dd_derisk_start
+        self.dd_derisk_full = dd_derisk_full
+        self.dd_derisk_floor = dd_derisk_floor
         self.cost_rate = cost_bps / 10_000.0
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
@@ -123,6 +133,7 @@ class CrossSectionalBacktester:
         w_active = np.zeros(N)  # weights currently held (start flat)
         gross_exposure = np.zeros(T)
         per_bar_short_cost = self.short_cost_annual / self.bars_per_year
+        peak = eq  # running high-water mark, for the drawdown circuit-breaker
 
         reb_idx, reb_turn, reb_cost, reb_eq = [], [], [], []
 
@@ -139,6 +150,7 @@ class CrossSectionalBacktester:
             short_ret = -float(np.abs(np.minimum(w_active, 0.0)).sum()) * per_bar_short_cost
             port_ret = price_ret + funding_ret + short_ret
             eq *= 1.0 + port_ret
+            peak = max(peak, eq)
             growth = 1.0 + price_ret  # weights drift with prices, not cashflows
 
             # Drift the weights forward with realised returns, then force-exit any
@@ -165,6 +177,10 @@ class CrossSectionalBacktester:
                     w_target = self._apply_shortability(w_target, t)
                 if self.vol_target is not None:
                     w_target = self._vol_scale(w_target, rets, t)
+                if self.capacity_aum is not None:
+                    w_target = self._apply_capacity(w_target, t)
+                if self.dd_derisk_start is not None:
+                    w_target = w_target * self._dd_scale(eq / peak - 1.0)
                 turnover = float(np.abs(w_target - w_drifted).sum())
                 cost = turnover * self.cost_rate
                 eq *= 1.0 - cost
@@ -223,6 +239,31 @@ class CrossSectionalBacktester:
         """
         dv = trailing_dollar_volume(self.closes, self.volumes, t, self.short_dv_lookback)
         return short_liquidity_mask(weights, dv, self.min_short_dv)
+
+    def _apply_capacity(self, weights: np.ndarray, t: int) -> np.ndarray:
+        """Cap each position so you're never too large a share of a coin's volume.
+
+        At assumed account size ``capacity_aum``, a name's dollars are
+        ``|weight| * aum``; that must stay under ``max_participation`` of its
+        trailing daily dollar volume, else you'd move the price against yourself.
+        This is what makes the strategy *capacity-limited*: at large AUM the
+        small-cap positions get clipped and the edge decays — the honest answer to
+        'how much money can this run?'.
+        """
+        dv = trailing_dollar_volume(self.closes, self.volumes, t, self.short_dv_lookback)
+        max_w = np.where(np.isfinite(dv) & (dv > 0),
+                         self.max_participation * dv / self.capacity_aum, 0.0)
+        return np.clip(weights, -max_w, max_w)
+
+    def _dd_scale(self, dd: float) -> float:
+        """Exposure multiplier for the drawdown circuit-breaker (dd <= 0)."""
+        sev = -dd
+        if sev <= self.dd_derisk_start:
+            return 1.0
+        if sev >= self.dd_derisk_full:
+            return self.dd_derisk_floor
+        frac = (sev - self.dd_derisk_start) / (self.dd_derisk_full - self.dd_derisk_start)
+        return 1.0 - frac * (1.0 - self.dd_derisk_floor)
 
     def _vol_scale(self, weights: np.ndarray, rets: np.ndarray, t: int) -> np.ndarray:
         """Scale weights so the book's predicted volatility hits ``vol_target``.

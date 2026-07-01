@@ -107,6 +107,17 @@ not backtest returns, decide whether an edge is real.
   less-crowded data. Promising lead, not confirmed (small universe, OOS peeked).
 - Next on-chain: fees/revenue and stablecoin-flow signals; larger coin coverage;
   combine TVL-value with the trend/size book.
+
+## v0.2 — hardening (realism)
+- ✅ Position **capacity limits** (`capacity_aum`, `max_participation`): cap each
+  name to a share of its daily dollar volume. **Finding:** the edge is
+  capacity-limited to ~$100k-$500k — by $1M Sharpe falls 1.0 → 0.26; it's a
+  small-capital strategy, not a big-fund one. At $100M+ only liquid majors remain
+  (scalable but low return). See `examples/capacity.py`.
+- ✅ Drawdown **circuit-breaker** (`dd_derisk_*`): de-risk exposure in deep
+  drawdowns — cut worst drawdown ~47% → ~30%, trading some return for safety.
+- Next hardening: maker-fill modelling (revive reversal), liquidity-aware
+  slippage, expand delisted set.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples
