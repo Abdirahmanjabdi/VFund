@@ -6,7 +6,10 @@ from vfund.backtest.cross_sectional import CrossSectionalBacktester
 from vfund.data.synthetic import generate_gbm_panel
 from vfund.analytics.performance import alpha_beta
 from vfund.strategy import (
+    CrossSectionalIlliquidity,
     CrossSectionalLowVol,
+    CrossSectionalMaxReturn,
+    CrossSectionalResidualMomentum,
     CrossSectionalValue,
     TimeSeriesTrend,
     TimeSeriesTrendEnsemble,
@@ -55,6 +58,38 @@ def test_ensemble_averages_horizons():
     ctx = PanelContext(299, closes, ["UP", "DOWN"])
     s = TimeSeriesTrendEnsemble(lookbacks=(20, 50, 100)).scores(ctx)
     assert abs(s[0] - 1.0) < 1e-9 and abs(s[1] + 1.0) < 1e-9
+
+
+def test_max_return_shorts_the_spiker():
+    # Asset 0 has a big one-day spike; asset 1 is smooth. MAX should short 0.
+    base = np.linspace(100, 110, 60)
+    spiker = base.copy(); spiker[-3] = base[-3] * 1.5  # a lottery pop
+    closes = np.column_stack([spiker, base])
+    ctx = PanelContext(59, closes, ["POP", "CALM"])
+    s = CrossSectionalMaxReturn(lookback=30).scores(ctx)
+    assert s[0] < s[1]  # the spiker scores lower -> shorted
+
+
+def test_residual_momentum_prefers_outperformer():
+    rng = np.random.default_rng(0)
+    mkt = np.cumprod(1 + 0.001 * rng.standard_normal(200))
+    winner = mkt * np.linspace(1.0, 1.5, 200)   # beats the market
+    loser = mkt * np.linspace(1.0, 0.7, 200)    # lags the market
+    closes = np.column_stack([winner * 100, loser * 100])
+    ctx = PanelContext(199, closes, ["WIN", "LOSE"])
+    s = CrossSectionalResidualMomentum(lookback=90).scores(ctx)
+    assert s[0] > s[1]
+
+
+def test_illiquidity_prefers_thin_names():
+    closes = np.column_stack([np.full(60, 100.0), np.full(60, 100.0)])
+    # Same |returns| via tiny wiggles, but A trades far less -> more illiquid.
+    closes[::2, 0] = 101.0
+    closes[::2, 1] = 101.0
+    volumes = np.column_stack([np.full(60, 5.0), np.full(60, 5_000.0)])
+    ctx = PanelContext(59, closes, ["THIN", "DEEP"], volumes=volumes)
+    s = CrossSectionalIlliquidity(lookback=30).scores(ctx)
+    assert s[0] > s[1]  # thin (illiquid) name scores higher -> longed
 
 
 def test_alpha_beta_recovers_known_beta():

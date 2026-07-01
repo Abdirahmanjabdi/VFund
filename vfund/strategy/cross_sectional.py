@@ -206,6 +206,80 @@ class CrossSectionalSize(CrossSectionalStrategy):
         return -np.log(np.maximum(dollar_vol, 1e-9))  # long small, short large
 
 
+class CrossSectionalMaxReturn(CrossSectionalStrategy):
+    """The lottery / MAX effect: short the recent big-hitters.
+
+    Coins with a large maximum daily return recently attract lottery-seeking
+    buyers and tend to underperform afterwards (Bali et al.; the 'max' predictor
+    in Liu-Tsyvinski-Wu). Score = minus the max daily return over the lookback,
+    so the lottery winners are shorted and the boring names longed.
+    """
+
+    def __init__(self, lookback: int = 30):
+        if lookback < 5:
+            raise ValueError("lookback too small")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        if closes.shape[0] <= self.lookback + 1:
+            return np.full(closes.shape[1], np.nan)
+        w = closes[-self.lookback - 1 :]
+        rets = w[1:] / w[:-1] - 1.0
+        return -rets.max(axis=0)  # short recent lottery winners
+
+
+class CrossSectionalResidualMomentum(CrossSectionalStrategy):
+    """Momentum on market-neutralised returns.
+
+    Raw momentum is dominated by market beta. Residual momentum first subtracts
+    the cross-sectional (market) mean return each day, then cumulates what's
+    left — a purer 'this coin outperformed its peers' signal that historically
+    travels better than raw momentum. Long residual winners, short losers.
+    """
+
+    def __init__(self, lookback: int = 90):
+        if lookback < 5:
+            raise ValueError("lookback too small")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        if closes.shape[0] <= self.lookback + 1:
+            return np.full(closes.shape[1], np.nan)
+        w = closes[-self.lookback - 1 :]
+        rets = w[1:] / w[:-1] - 1.0
+        resid = rets - rets.mean(axis=1, keepdims=True)  # remove the market each day
+        return resid.sum(axis=0)  # long cumulative residual winners
+
+
+class CrossSectionalIlliquidity(CrossSectionalStrategy):
+    """The illiquidity premium (Amihud): get paid to hold the hard-to-trade.
+
+    Amihud illiquidity = average |daily return| / daily dollar volume. Less
+    liquid assets historically earn higher returns as compensation. Long the
+    illiquid, short the liquid — a premium that lives in exactly the small,
+    hard-to-trade names big funds can't size into (your capacity edge).
+    """
+
+    def __init__(self, lookback: int = 30):
+        if lookback < 5:
+            raise ValueError("lookback too small")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes, vols = ctx.closes, ctx.volumes
+        if vols is None:
+            raise ValueError("CrossSectionalIlliquidity needs volume data")
+        if closes.shape[0] <= self.lookback + 1:
+            return np.full(closes.shape[1], np.nan)
+        w = closes[-self.lookback - 1 :]
+        abs_ret = np.abs(w[1:] / w[:-1] - 1.0)
+        dollar_vol = closes[-self.lookback :] * vols[-self.lookback :]
+        illiq = (abs_ret / np.maximum(dollar_vol, 1e-9)).mean(axis=0)
+        return illiq  # long illiquid (high Amihud)
+
+
 class TimeSeriesTrend(CrossSectionalStrategy):
     """Per-asset trend following (time-series momentum).
 
