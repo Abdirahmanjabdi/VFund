@@ -136,10 +136,15 @@ Two hypotheses ship in v0.1, and they teach opposite lessons:
 
 * **Short-term reversal** — a real signal, but so fast it dies below ~1 bp of
   cost. A cautionary tale about the backtest-to-reality gap.
-* **Funding carry** — lower-turnover and structural; in the 2023-24 / 30-coin
-  run it survived realistic costs (OOS Sharpe ~1.0 at 5 bp) when concentrated in
-  the funding *extremes* and rebalanced daily. See
-  [`examples/funding_carry_study.py`](examples/funding_carry_study.py).
+* **Funding carry** — lower-turnover and structural. A naive walk-forward looked
+  promising (OOS Sharpe ~1.0 at 5 bp), but the robustness harness **rejected**
+  it: under a coin-dropping bootstrap it was positive only ~35% of the time, and
+  its Deflated Sharpe (adjusting for how many configs were tried) fell to ~15%. A
+  textbook case of walk-forward flattering a fragile result — and exactly why the
+  harness exists. See [`examples/robustness_carry.py`](examples/robustness_carry.py).
+
+Neither hypothesis is a tradable edge yet. That's the normal state of honest
+research: most ideas die, and the value is in killing them quickly.
 
 The walk-forward report prints the **overfitting gap** (in-sample minus
 out-of-sample) — the number that tells you whether you found an edge or just fit
