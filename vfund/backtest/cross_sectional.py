@@ -16,12 +16,10 @@ front and centre rather than an afterthought.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import polars as pl
 
-from vfund.backtest.construct import scores_to_weights
+from vfund.backtest.construct import scores_to_weights, vol_scale_weights
 from vfund.backtest.result import BacktestResult
 from vfund.data.intervals import bars_per_year as _bars_per_year
 from vfund.data.panel import align_funding, pivot_to_wide, validate_panel
@@ -189,16 +187,8 @@ class CrossSectionalBacktester:
         ``max_leverage`` gross so a calm patch can't over-lever.
         """
         lo = max(1, t - self.vol_lookback + 1)
-        window = rets[lo : t + 1]
-        if window.shape[0] < 5:
-            return weights
-        cov = np.atleast_2d(np.cov(window, rowvar=False))
-        var = float(weights @ cov @ weights)
-        pred_vol = math.sqrt(max(var, 0.0) * self.bars_per_year)
-        if pred_vol <= 1e-9:
-            return weights
-        weights = weights * (self.vol_target / pred_vol)
-        gross = float(np.abs(weights).sum())
-        if gross > self.max_leverage:
-            weights = weights * (self.max_leverage / gross)
-        return weights
+        return vol_scale_weights(
+            weights, rets[lo : t + 1],
+            vol_target=self.vol_target, bars_per_year=self.bars_per_year,
+            max_leverage=self.max_leverage,
+        )

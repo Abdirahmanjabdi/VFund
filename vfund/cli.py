@@ -138,6 +138,41 @@ def cmd_fetch_funding(args) -> int:
     return 0
 
 
+def cmd_signal(args) -> int:
+    from vfund.data.panel import load_panel
+    from vfund.live.signal import combined_book, format_book
+
+    panel = load_panel(args.data)
+    book = combined_book(
+        panel, size_lookback=args.size_lookback, vol_target=args.vol_target,
+        top_k=args.top_k, interval=args.interval,
+    )
+    print(format_book(book))
+    return 0
+
+
+def cmd_paper(args) -> int:
+    from vfund.data.panel import load_panel
+    from vfund.live.paper import PaperTracker
+    from vfund.live.signal import format_book
+
+    panel = load_panel(args.data)
+    tracker = PaperTracker(args.state, start_equity=args.start_equity)
+    res = tracker.update(
+        panel, cost_bps=args.cost_bps,
+        size_lookback=args.size_lookback, vol_target=args.vol_target,
+        top_k=args.top_k, interval=args.interval,
+    )
+    st = tracker.load()
+    ret = st["equity"] / st["start_equity"] - 1.0
+    print(f"[{res['status']}] as of {res['asof']}")
+    print(f"  last-period return   {res['port_ret']*100:+.2f}%")
+    print(f"  paper equity         ${st['equity']:,.2f}  ({ret*100:+.1f}% since {st['created'][:10]})")
+    print(f"  updates recorded     {len(st['history'])}\n")
+    print(format_book(res["book"]))
+    return 0
+
+
 def cmd_research(args) -> int:
     bt_kwargs = dict(
         rebalance_every=args.rebalance_every,
@@ -291,6 +326,27 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--reversion", type=float, default=0.15)
     r.add_argument("--seed", type=int, default=42)
     r.set_defaults(func=cmd_research)
+
+    # signal — today's target book from the combined edge
+    sig = sub.add_parser("signal", help="print today's combined trend+size target book")
+    sig.add_argument("--data", required=True, help="panel .parquet path")
+    sig.add_argument("--interval", default="1d")
+    sig.add_argument("--size-lookback", type=int, default=20)
+    sig.add_argument("--vol-target", type=float, default=0.30)
+    sig.add_argument("--top-k", type=int, default=5)
+    sig.set_defaults(func=cmd_signal)
+
+    # paper — forward-track a hypothetical account
+    pap = sub.add_parser("paper", help="update a persistent paper-trading account")
+    pap.add_argument("--data", required=True, help="panel .parquet path (refetch to advance)")
+    pap.add_argument("--state", required=True, help="paper account .json path")
+    pap.add_argument("--start-equity", type=float, default=10_000.0)
+    pap.add_argument("--cost-bps", type=float, default=10.0)
+    pap.add_argument("--interval", default="1d")
+    pap.add_argument("--size-lookback", type=int, default=20)
+    pap.add_argument("--vol-target", type=float, default=0.30)
+    pap.add_argument("--top-k", type=int, default=5)
+    pap.set_defaults(func=cmd_paper)
 
     return parser
 

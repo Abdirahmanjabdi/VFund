@@ -27,8 +27,8 @@ future, and fills your orders one bar late, at realistic prices, after costs.
 ## Install
 
 ```bash
-git clone https://github.com/your-handle/vfund
-cd vfund
+git clone https://github.com/Abdirahmanjabdi/VFund
+cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
@@ -165,6 +165,40 @@ wf = walk_forward(
 print(wf.summary())
 ```
 
+## From research to a book
+
+Building on the literature (Liu-Tsyvinski-Wu size factor; Hurst-Ooi-Pedersen
+trend), a **combined trend + size book** survived the full gauntlet on 2021-2024
+data — Sharpe ~1.6, alpha t ≈ 2.7, Deflated Sharpe ~99% over the configs tried
+([`examples/build_edge.py`](examples/build_edge.py),
+[`examples/robustness_combined.py`](examples/robustness_combined.py)).
+
+```bash
+# What should I hold right now? (long/short target weights)
+vfund signal --data data/uni_daily.parquet
+
+# Forward-track a hypothetical account as new data arrives (the real OOS test)
+vfund paper --data data/uni_daily.parquet --state data/paper.json --start-equity 10000
+```
+
+## Known limitations — read before trusting any number
+
+The combined book passed *in-sample* robustness. That is **not** proof it makes
+money live. Honest caveats, in order of severity:
+
+1. **Survivorship bias.** The universe is coins that *survived* 2021-2024. Coins
+   that pumped and died (LUNA, FTT, …) are excluded, flattering a book that
+   shorts hot names and holds survivors. Fixing it needs point-in-time universe
+   data — the top open item.
+2. **One bear cycle (n=1).** The crisis-alpha rests on a single 2022 crash.
+3. **Multiple testing.** The Deflated Sharpe adjusts for configs in one script,
+   not the whole research search — true significance is lower.
+4. **Short-side frictions** (borrow, funding, liquidation) are not modelled; the
+   size factor uses a dollar-volume proxy, not true market cap.
+5. **Capital reality.** A ~20-name long/short book needs ~$10k+ and a futures
+   account; it can't run on a $100 spot account
+   ([`examples/account_sim.py`](examples/account_sim.py)). Paper-trade first.
+
 ## Architecture
 
 ```
@@ -174,8 +208,9 @@ vfund/
 ├── strategy/    # single-asset Strategy + cross-sectional (reversal, momentum) strategies
 ├── backtest/    # event-driven engine, cross-sectional L/S engine, broker (costs),
 │                #   portfolio, portfolio construction, result
-├── research/    # time-series splits + walk-forward out-of-sample validation
-└── analytics/   # Sharpe/Sortino/drawdown/CAGR, text reports, equity charts
+├── research/    # walk-forward, robustness harness (bootstrap, deflated Sharpe)
+├── live/        # combined-book signal generation + paper-account tracker
+└── analytics/   # Sharpe/Sortino/drawdown/CAGR/alpha-beta, reports, charts
 ```
 
 Each layer maps to a job on a quant desk — that's deliberate. See

@@ -12,6 +12,8 @@ usually cleaner and cheaper than spreading thin across the whole universe.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 
@@ -57,4 +59,34 @@ def scores_to_weights(
     if gross > 0:
         book = book / gross * leverage
     w[valid] = book
+    return w
+
+
+def vol_scale_weights(
+    weights: np.ndarray,
+    recent_returns: np.ndarray,
+    *,
+    vol_target: float,
+    bars_per_year: float,
+    max_leverage: float = 3.0,
+) -> np.ndarray:
+    """Scale a weight vector so its predicted volatility hits ``vol_target``.
+
+    ``recent_returns`` is an ``(L, N)`` window of asset returns. Predicted book
+    vol is ``sqrt(w' Σ w)`` annualised; weights are scaled by
+    ``vol_target / pred_vol`` and capped at ``max_leverage`` gross. Shared by the
+    backtester and the live signal so they size positions identically.
+    """
+    w = np.asarray(weights, dtype=float)
+    if recent_returns.shape[0] < 5:
+        return w
+    cov = np.atleast_2d(np.cov(recent_returns, rowvar=False))
+    var = float(w @ cov @ w)
+    pred_vol = math.sqrt(max(var, 0.0) * bars_per_year)
+    if pred_vol <= 1e-9:
+        return w
+    w = w * (vol_target / pred_vol)
+    gross = float(np.abs(w).sum())
+    if gross > max_leverage:
+        w = w * (max_leverage / gross)
     return w

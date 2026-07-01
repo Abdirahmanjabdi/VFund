@@ -32,8 +32,8 @@ dev = ["pytest>=7.0", "matplotlib>=3.7"]
 vfund = "vfund.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-handle/vfund"
-Repository = "https://github.com/your-handle/vfund"
+Homepage = "https://github.com/Abdirahmanjabdi/VFund"
+Repository = "https://github.com/Abdirahmanjabdi/VFund"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vfund"]
