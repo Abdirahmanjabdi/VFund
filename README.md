@@ -3,35 +3,45 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-70%20passing-brightgreen)](tests/)
 
-**An open-source quant research & trading platform — open tools, private edge.**
+**An open-source quant research & trading platform for crypto — built around a
+single principle: make it as hard as possible to fool yourself.**
 
-VFund is a local-first toolkit for systematic trading research. Ingest market
-data, backtest strategies *without fooling yourself*, and measure performance
-the way a real fund does. The tools are open source. The edge you discover with
-them is yours to keep.
+VFund is a local-first Python toolkit (with an optional Rust core) for systematic
+trading research. It ingests market data, backtests strategies *without the usual
+self-deception*, validates them out-of-sample, models real-world frictions, and
+runs a live forward paper-trading loop. The tools are open; any edge you find with
+them is yours.
 
-📖 **New here? Read the [case study](docs/CASE_STUDY.md)** — the honest story of
-building a platform that rigorously killed most of its own best ideas (and found
-a differentiated on-chain lead). See also [docs/OVERVIEW.md](docs/OVERVIEW.md).
-
-> **Status:** a working research platform — honest backtesting, walk-forward +
-> robustness validation, survivorship-corrected data, and a live forward
-> paper-trading loop. No confirmed edge yet; one promising on-chain lead.
+📖 **Start with the [case study](docs/CASE_STUDY.md)** — the honest story of how
+this platform rigorously killed most of its own best ideas and what survived. Then
+[docs/OVERVIEW.md](docs/OVERVIEW.md) (architecture) and
+[docs/EXAMPLES.md](docs/EXAMPLES.md) (every example explained).
 
 ---
 
 ## Why VFund exists
 
-Serious trading infrastructure is almost all proprietary. The open-source corner
-is either toy-grade or a single heavyweight incumbent. VFund is a third path: a
-clean, modern, *learnable* platform where each component teaches one role of the
-quant stack — and where contributors improve the **microscope**, never the
-discoveries made with it.
+Most people who "backtest" a strategy accidentally cheat — they use future
+information, ignore costs, test only on coins that still exist, overfit to the
+past, or get excited about the best of a hundred noisy tries. They ship a
+beautiful fake result and lose money.
 
-The design principle that matters most: **you cannot accidentally cheat.** The
-backtester hands your strategy a view of history that physically excludes the
-future, and fills your orders one bar late, at realistic prices, after costs.
+VFund is built to prevent exactly that. Every feature exists to make a backtest
+*more honest*, and the platform's real value is that it **kills bad ideas quickly
+and cheaply, on paper, before any money is at risk.**
+
+| How backtests lie | VFund's defense |
+|---|---|
+| Look-ahead bias | Event-driven engine: decide on close `t`, fill at `t+1` |
+| Unpaid costs | Commission, slippage, short financing, hard-to-short all modelled |
+| Overfitting | Walk-forward selection; strict in-sample vs out-of-sample split |
+| Multiple testing | Probabilistic & Deflated Sharpe (`research/robustness.py`) |
+| Fragility | Sub-period stability + universe (coin-dropping) bootstrap |
+| Survivorship bias | Ragged engine + delisted coins re-included (`KNOWN_DELISTED`) |
+| Un-executable trades | Hard-to-short gate, capacity limits, maker/fill modelling |
+| Ignoring capacity | Position caps by share of daily volume — the edge decays with size |
 
 ## Install
 
@@ -41,123 +51,107 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
+pytest -q                                          # 70 tests, no network needed
 ```
 
-## 60-second demo (no API key, fully offline)
+The optional native Rust core (a ~77× faster simulation loop) is separate; see
+[docs/RUST.md](docs/RUST.md). Everything works in pure Python without it.
+
+## 60-second demo (offline, no API key)
 
 ```bash
 vfund demo
 ```
 
-This generates synthetic price data, runs a moving-average crossover, and prints
-a fund-style performance report:
+Generates synthetic price data, runs a moving-average strategy, and prints a
+fund-style report (Sharpe, Sortino, CAGR, max drawdown, profit factor). The demo
+strategy *loses* money — the engine tells the truth from the first run.
+
+---
+
+## The current result (honestly measured)
+
+After every de-biasing and friction, the platform's leading candidate is a
+**two-engine book**:
+
+- **Alpha engine** — a small-cap cross-sectional book (trend + size + on-chain),
+  higher return but capacity-limited to ~$2–5M.
+- **Yield engine** — a majors funding-basis carry, modest return but scalable,
+  run cross-margined.
+
+They're nearly uncorrelated (≈ −0.02). A 50/50 blend (2021–2026, $100k):
+
+| | Sharpe | CAGR | Max drawdown | Out-of-sample Sharpe |
+|---|---|---|---|---|
+| Alpha only | 1.40 | 29% | −19% | 0.93 |
+| 50/50 two-engine | **1.80** | 19% | **−9%** | **0.92** |
+
+**Nothing here is a confirmed, live-tradable edge.** These are backtested and
+out-of-sample results with known optimism. The only real test — a live forward
+paper account — is running now and needs months to speak. See
+[docs/CASE_STUDY.md](docs/CASE_STUDY.md) and the [limitations](#known-limitations).
+
+---
+
+## Architecture
 
 ```
-==============================================
-  VFund backtest report — MACrossover
-==============================================
-  Bars                               2,000
-  Trades                                ...
-  Initial equity               $10,000.00
-  Final equity                        ...
-----------------------------------------------
-  Total return                        ...
-  CAGR                                ...
-  Ann. volatility                     ...
-  Sharpe (ann.)                       ...
-  Sortino (ann.)                      ...
-  Max drawdown                        ...
-==============================================
+vfund/
+├── data/            # ingestion, storage, universes
+│   ├── models.py         canonical OHLCV bar schema
+│   ├── panel.py          multi-asset (ragged) panels + funding alignment
+│   ├── ingest.py         Binance spot & perp klines (paginated)
+│   ├── universe.py       liquid universes, funding, delisted coins (KNOWN_DELISTED)
+│   ├── onchain.py        DefiLlama TVL (on-chain fundamentals)
+│   ├── synthetic.py      GBM price/panel generators (offline demo & tests)
+│   └── storage.py        Parquet read/write
+├── strategy/        # signals
+│   ├── base.py           single-asset Strategy interface
+│   └── cross_sectional.py 13 cross-sectional + time-series strategies (see below)
+├── backtest/        # engines
+│   ├── engine.py         single-asset event-driven backtester
+│   ├── cross_sectional.py ragged long/short engine (costs, funding, vol-target,
+│   │                      shortability, capacity, drawdown breaker, fill model)
+│   ├── construct.py      scores→weights, vol-targeting, shortability
+│   ├── sim.py / _accel.py the hot-loop primitive + Rust dispatch
+│   └── broker.py, portfolio.py, result.py
+├── research/        # validation
+│   ├── splits.py         time-series train/test + walk-forward windows
+│   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
+│   └── robustness.py     Probabilistic & Deflated Sharpe, bootstraps, alpha/beta
+├── live/            # forward trading
+│   ├── signal.py         today's target book (single or 3-sleeve)
+│   └── paper.py          persistent forward paper-account tracker
+├── microstructure/  # order book & market-making
+│   ├── orderbook.py      price-time limit order book + matching engine
+│   └── simulator.py      market-making sim with adverse selection
+└── analytics/       # Sharpe/Sortino/drawdown/CAGR/alpha-beta, reports, charts
 ```
 
-## Backtest on real crypto
+## Data sources (all free, no keys)
 
-```bash
-# Pull two years of hourly BTC bars from Binance (no key required)
-vfund fetch --symbol BTCUSDT --interval 1h --start 2023-01-01 --out data/btc.parquet
+- **Binance spot klines** — OHLCV for any pair (`vfund fetch` / `fetch-universe`).
+- **Binance perpetual klines** — `fetch_klines(..., futures=True)` (for basis).
+- **Binance funding rates** — perp funding history (`vfund fetch-funding`).
+- **Delisted coins** — Binance still serves klines for delisted symbols; a curated
+  `KNOWN_DELISTED` list re-includes dead coins (LUNC, SRM, WAVES, …) to fix
+  survivorship bias.
+- **DefiLlama TVL** — on-chain total-value-locked per protocol (`vfund fetch-tvl`).
 
-# Backtest a 20/50 MA crossover, save an equity + drawdown chart
-vfund backtest --data data/btc.parquet --interval 1h \
-    --strategy ma --fast 20 --slow 50 --plot results/btc.png
-```
+## Strategies
 
-## Use it as a library
+Cross-sectional (rank a universe, dollar-neutral long/short):
+`CrossSectionalReversal`, `CrossSectionalMomentum`, `CrossSectionalSize`,
+`CrossSectionalValue`, `CrossSectionalLowVol`, `CrossSectionalMaxReturn`
+(lottery), `CrossSectionalResidualMomentum`, `CrossSectionalIlliquidity`
+(Amihud), `FundingCarry`, `TVLMomentum`, `TVLDivergence` (on-chain value).
 
-```python
-from vfund.data.synthetic import generate_gbm_bars
-from vfund.backtest import Backtester
-from vfund.strategy import MACrossover
+Time-series / directional: `TimeSeriesTrend`, `TimeSeriesTrendEnsemble`.
 
-data = generate_gbm_bars(2000, interval="1h", seed=1)
-result = Backtester(data, MACrossover(fast=20, slow=50), interval="1h").run()
+Baselines: `MACrossover`, `BuyAndHold`. Writing your own is one method — see
+[docs/OVERVIEW.md](docs/OVERVIEW.md).
 
-print(result.summary())
-print(result.metrics()["sharpe"])
-```
-
-Writing your own strategy is one method:
-
-```python
-from vfund.strategy.base import Strategy, BarContext
-import numpy as np
-
-class Momentum(Strategy):
-    def __init__(self, lookback: int = 100):
-        self.lookback = lookback
-
-    def on_bar(self, ctx: BarContext) -> float:
-        if ctx.n_seen <= self.lookback:
-            return 0.0
-        past = ctx.closes[-self.lookback - 1]
-        return 1.0 if ctx.bar.close > past else 0.0   # ride positive momentum
-```
-
-`on_bar` returns a **target weight** in `[-1, 1]` (`1.0` = fully long, `0.0` =
-flat, `-1.0` = fully short). The engine handles rebalancing, slippage,
-commission, and accounting.
-
-## Cross-sectional research (v0.1)
-
-Real crypto edge is usually *relative* — how coins move against each other — and
-only counts if it survives out-of-sample and after costs. VFund tests exactly
-that.
-
-```bash
-# Offline: does a short-term reversal signal survive out-of-sample?
-# (synthetic data with a real reversal effect baked in, so you can see the
-#  machine detect genuine edge — and watch costs destroy it)
-vfund research --demo --walkforward --hypothesis reversal \
-    --grid 1 2 3 6 --train-size 2000 --test-size 800 --cost-bps 0    # signal is real
-vfund research --demo --walkforward --hypothesis reversal \
-    --grid 1 2 3 6 --train-size 2000 --test-size 800 --cost-bps 10   # costs kill it
-
-# On real data: pull a 30-coin universe, then research it
-vfund fetch-universe --top 30 --interval 1h --start 2023-01-01 --out data/uni.parquet
-vfund research --data data/uni.parquet --walkforward --hypothesis reversal
-
-# Funding carry: harvest the perp funding spread (a low-turnover, cost-surviving edge)
-vfund fetch-funding --start 2023-06-01 --end 2024-06-01 --out data/funding.parquet
-vfund research --data data/uni.parquet --funding data/funding.parquet --walkforward \
-    --hypothesis carry --rebalance-every 24 --top-k 5 --cost-bps 5
-```
-
-Two hypotheses ship in v0.1, and they teach opposite lessons:
-
-* **Short-term reversal** — a real signal, but so fast it dies below ~1 bp of
-  cost. A cautionary tale about the backtest-to-reality gap.
-* **Funding carry** — lower-turnover and structural. A naive walk-forward looked
-  promising (OOS Sharpe ~1.0 at 5 bp), but the robustness harness **rejected**
-  it: under a coin-dropping bootstrap it was positive only ~35% of the time, and
-  its Deflated Sharpe (adjusting for how many configs were tried) fell to ~15%. A
-  textbook case of walk-forward flattering a fragile result — and exactly why the
-  harness exists. See [`examples/robustness_carry.py`](examples/robustness_carry.py).
-
-Neither hypothesis is a tradable edge yet. That's the normal state of honest
-research: most ideas die, and the value is in killing them quickly.
-
-The walk-forward report prints the **overfitting gap** (in-sample minus
-out-of-sample) — the number that tells you whether you found an edge or just fit
-noise.
+## The research workflow
 
 ```python
 from vfund.data.synthetic import generate_gbm_panel
@@ -171,87 +165,98 @@ wf = walk_forward(
     [{"lookback": lb} for lb in (1, 2, 3, 6)],
     train_size=2000, test_size=800, backtest_kwargs={"cost_bps": 10},
 )
-print(wf.summary())
+print(wf.summary())     # reports the overfitting gap: in-sample minus out-of-sample
 ```
 
-## From research to a book
+The discipline: **select parameters in-sample, judge on data never seen, and
+correct for how many things you tried** (Deflated Sharpe). A result that survives
+that is worth a second look; most don't.
 
-Building on the literature (Liu-Tsyvinski-Wu size factor; Hurst-Ooi-Pedersen
-trend), a **combined trend + size book** survived the full gauntlet on 2021-2024
-data — Sharpe ~1.6, alpha t ≈ 2.7, Deflated Sharpe ~99% over the configs tried
-([`examples/build_edge.py`](examples/build_edge.py),
-[`examples/robustness_combined.py`](examples/robustness_combined.py)).
-
-The live signal runs the **validated** configuration — a broad, cleaned universe
-(stablecoins/pegs/thin listings removed) with the hard-to-short gate (only short
-names with enough recent liquidity).
+## CLI reference
 
 ```bash
-# 1. Fetch a broad current universe
-vfund fetch-universe --top 60 --interval 1d --start 2021-01-01 --out data/live.parquet
+# Data
+vfund fetch-universe --top 60 --interval 1d --start 2021-01-01 --out data/uni.parquet
+vfund fetch-funding  --symbols BTCUSDT ETHUSDT --start 2021-01-01 --out data/f.parquet
+vfund fetch-tvl      --start 2021-01-01 --out data/tvl.parquet
 
-# 2. What should I hold right now? (long small-caps, short liquid majors)
-vfund signal --data data/live.parquet
+# Backtest / research
+vfund demo                                              # offline synthetic
+vfund backtest --data data/uni.parquet --strategy ma --fast 20 --slow 50
+vfund research --data data/uni.parquet --walkforward --hypothesis reversal
+vfund research --data uni.parquet --funding f.parquet --hypothesis carry --walkforward
 
-# 3. Forward-track a hypothetical account. Re-fetch (step 1) and re-run this
-#    periodically to accumulate a clean, never-seen out-of-sample record — the
-#    only honest test left once the historical OOS window has been studied.
-vfund paper --data data/live.parquet --state data/paper.json --start-equity 100000
+# Live
+vfund signal --data data/uni.parquet                   # today's target book
+vfund paper  --data data/uni.parquet --state data/paper.json --start-equity 100000
+vfund paper  --three-sleeve --data uni.parquet --defi-data defi.parquet --tvl-data tvl.parquet ...
 ```
 
-## Known limitations — read before trusting any number
+Run `vfund <command> -h` for full options.
 
-The combined book passed *in-sample* robustness. That is **not** proof it makes
-money live. Honest caveats, in order of severity:
+## Live / forward paper trading
 
-1. **Survivorship bias (addressed, not perfect).** The engine is ragged (coins
-   enter/exit as listed/delisted), short costs are modelled, and — crucially —
-   Binance still serves *delisted* coins' candles, so `KNOWN_DELISTED` feeds a
-   survivorship-corrected universe of coins that actually died. This *revealed*
-   the bias: on the hand-picked survivor universe, adding dead coins cut
-   in-sample Sharpe 1.30→0.87 and pushed OOS to −1.46. The broader universe held
-   up (broad+dead, with short costs: IS 1.00 / OOS 0.46). Residual gap: shorting
-   coins into delisting is often impossible, so those short profits are
-   optimistic. See [`examples/survivorship_check.py`](examples/survivorship_check.py).
-2. **One bear cycle (n=1).** The crisis-alpha rests on a single 2022 crash.
-3. **Multiple testing.** The Deflated Sharpe adjusts for configs in one script,
-   not the whole research search — true significance is lower.
-4. **Short-side frictions** (borrow, funding, liquidation) are not modelled; the
-   size factor uses a dollar-volume proxy, not true market cap.
-5. **Capital reality.** A ~20-name long/short book needs ~$10k+ and a futures
-   account; it can't run on a $100 spot account
-   ([`examples/account_sim.py`](examples/account_sim.py)). Paper-trade first.
+The only honest test of an edge is data it has never seen. `vfund paper` marks a
+persistent hypothetical account forward as new data arrives — re-fetch and re-run
+periodically (a Windows scheduled task in `scripts/` automates it weekly) to
+accumulate a genuine, untouched out-of-sample record. The live signal runs the
+*validated* configuration (broad universe, hard-to-short gate).
 
-## Architecture
+## The Rust core (optional)
 
-```
-vfund/
-├── data/        # OHLCV + multi-asset panel schema, Binance/universe/funding ingest,
-│                #   Parquet storage, synthetic GBM (single & panel)
-├── strategy/    # single-asset Strategy + cross-sectional (reversal, momentum) strategies
-├── backtest/    # event-driven engine, cross-sectional L/S engine, broker (costs),
-│                #   portfolio, portfolio construction, result
-├── research/    # walk-forward, robustness harness (bootstrap, deflated Sharpe)
-├── live/        # combined-book signal generation + paper-account tracker
-└── analytics/   # Sharpe/Sortino/drawdown/CAGR/alpha-beta, reports, charts
-```
+The innermost simulation loop can run natively via a [PyO3](https://pyo3.rs)
+extension in `rust/` — ~77× faster on the raw loop, identical results, with a pure
+Python fallback when unbuilt. `CrossSectionalBacktester.run()` uses it
+automatically when present. Build and details: [docs/RUST.md](docs/RUST.md).
 
-Each layer maps to a job on a quant desk — that's deliberate. See
-[ROADMAP.md](ROADMAP.md) for where it's headed (order-book data, live execution,
-a research copilot) and how the build doubles as a curriculum.
+## Microstructure
 
-## Learn more
+`vfund/microstructure/` provides a limit order book and a market-making simulator
+that reproduces **adverse selection** from first principles — the effect that
+makes naive maker backtests overstate. It's the foundation for honestly evaluating
+short-horizon / market-making edges (like reversal) that die as a taker.
 
-[docs/OVERVIEW.md](docs/OVERVIEW.md) — architecture, the anti-self-deception
-philosophy, and how to reproduce the research end to end.
+## Examples
+
+25+ runnable scripts in `examples/` reproduce the entire research journey, from
+the first honest backtest to the two-engine book. **Each is explained in
+[docs/EXAMPLES.md](docs/EXAMPLES.md).** Highlights:
+
+- `oos_gauntlet.py` — select in-sample, judge out-of-sample (the core discipline)
+- `robustness_combined.py` — the full gauntlet (bootstrap + Deflated Sharpe)
+- `trend_cycle.py` — trend's crisis alpha, beta-adjusted, over a full cycle
+- `survivorship_check.py` — dead coins + short costs + hard-to-short
+- `capacity_curve.py` — how the edge decays as capital grows
+- `two_engine.py` — the combined alpha + carry book
+
+## Known limitations
+
+The results are backtested and out-of-sample, **not** live-confirmed. Honest
+caveats, in order of severity:
+
+1. **No live track record.** Every number predates the strategy's own design. The
+   forward paper account is the real judge and needs months.
+2. **Survivorship is reduced, not eliminated.** Dead coins are re-included, but
+   the current-liquid universe still has selection bias.
+3. **Multiple testing.** Deflated Sharpe adjusts for configs in one study, not the
+   whole research search — true significance is lower.
+4. **Capacity.** The small-cap edge caps at ~$2–5M; it's not a large-AUM strategy.
+5. **Execution realism.** Real slippage, borrow availability, and (for the carry)
+   intraday liquidation will shave results further.
 
 ## Develop
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest -q          # 70 tests, network-free
 ```
 
-## License
+CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every
+push. See [CONTRIBUTING.md](CONTRIBUTING.md) — the bar for a feature is: does it
+make a backtest *harder to fool yourself with*, or add a well-motivated hypothesis?
 
-MIT — see [LICENSE](LICENSE). Contributions welcome.
+## Not financial advice
+
+VFund is a research tool. Nothing here is a recommendation to trade. Past — and
+especially backtested — performance does not predict future results. See
+[LICENSE](LICENSE) (MIT).

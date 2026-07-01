@@ -84,14 +84,63 @@ first *new* signal positive in **both** in-sample (1.09) and out-of-sample (0.44
 Modest, unconfirmed, but differentiated — and exactly where a small player has an
 informational edge classic quants don't.
 
+Combining the size factor and the on-chain sleeve with trend gave a diversified
+**small-cap 3-sleeve book** — the near-uncorrelated sleeves lifted the Sharpe and
+halved the drawdown, and it held out-of-sample (Sharpe ≈ 0.9). But it has a hard
+limit: capacity. Modelling position caps by share of daily volume showed the edge
+lives in small coins that can't absorb money — it fades past a few million dollars.
+
+## Fixing survivorship for real
+
+The biggest bias flatters every crypto backtest: testing only on coins that still
+exist. It turned out Binance still serves klines for *delisted* symbols, so a
+curated list of coins that actually died (LUNC, SRM, WAVES, …) could be added
+back. The verdict was clear — the survivor-only in-sample Sharpe had been inflated;
+the broader, dead-coin-inclusive universe was more honest and, usefully, more
+robust out-of-sample. Adding real short-financing costs and a hard-to-short gate
+(you can't borrow illiquid names) completed the de-biasing.
+
+## Searching for capacity: the funding carry
+
+A small-cap edge can't run a fund on its own, so the search turned to a
+*high-capacity* complement. Price-based strategies on the majors found nothing —
+BTC/ETH and friends are efficient and crowded. But a **structural** edge did
+appear: **funding-basis carry**. Perpetual futures trade at a premium (leveraged
+longs pay), so a delta-neutral long-spot/short-perp book harvests that funding
+with huge capacity.
+
+Three layers of modelling turned an exciting-but-fake number into an honest one:
+
+1. **Naive** funding-only: Sharpe 4–7. Too good to be true.
+2. **Real basis** (actual perp prices): the delta-neutral hedge genuinely contains
+   drawdowns — but it's a *thin-margin yield*, so realistic costs flip the recent
+   period negative. A modest carry, not a money printer. (This corrected the
+   author's own prediction that basis blowups would dominate — the data said costs
+   and funding-regime dependence do.)
+3. **Intraday liquidation** (via daily perp highs): the carry's survival depends
+   *entirely* on margin setup. Run with siloed leverage, a squeeze (DOGE spiked
+   +412% intraday) wipes you out. Run cross-margined (spot collateralises the
+   perp), it's safe. The operational setup *is* the risk management.
+
+## The two-engine book
+
+The two edges are nearly uncorrelated: a small-cap **alpha** engine and a majors
+**yield** engine. Combined 50/50, the book keeps a strong Sharpe (~1.8) with about
+half the drawdown of the alpha alone, and holds out-of-sample. That is a realistic
+fund structure — a high-return small book plus a scalable, modest carry — with
+every number honestly stress-tested.
+
 ## What actually got built
 
-A local-first Python platform (60+ tests, CI): market + panel + funding +
-delisted-coin + on-chain data ingestion; an event-driven, ragged cross-sectional
-long/short engine with realistic costs and shortability; a research suite
-(walk-forward, robustness, Probabilistic/Deflated Sharpe, alpha/beta); a live
-signal + forward paper-trading loop; and a dozen `examples/` that reproduce the
-entire journey. It's public: <https://github.com/Abdirahmanjabdi/VFund>.
+A local-first Python platform (70+ tests, CI on 3.11 & 3.12), with an optional
+native Rust core (~77× on the hot loop). Market + perp + funding + delisted-coin +
+on-chain (TVL) ingestion; an event-driven, ragged cross-sectional long/short
+engine modelling costs, short financing, shortability, capacity, drawdown control,
+and maker fills; a research suite (walk-forward, robustness, Probabilistic/Deflated
+Sharpe, alpha/beta); a market-microstructure layer (order book + adverse-selection
+sim); a live signal + forward paper-trading loop; and 25+ `examples/` that
+reproduce the entire journey. It's public:
+<https://github.com/Abdirahmanjabdi/VFund>.
 
 ## The takeaway
 
