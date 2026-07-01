@@ -16,6 +16,8 @@ front and centre rather than an afterthought.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import polars as pl
 
@@ -44,6 +46,8 @@ class CrossSectionalBacktester:
         vol_lookback: int = 30,
         max_leverage: float = 3.0,
         short_cost_bps_annual: float = 0.0,
+        min_short_dollar_volume: float | None = None,
+        short_dv_lookback: int = 30,
         allow_ragged: bool = True,
     ):
         panel = validate_panel(panel)
@@ -78,6 +82,8 @@ class CrossSectionalBacktester:
         self.vol_lookback = max(5, int(vol_lookback))
         self.max_leverage = max_leverage
         self.short_cost_annual = short_cost_bps_annual / 10_000.0
+        self.min_short_dv = min_short_dollar_volume
+        self.short_dv_lookback = max(5, int(short_dv_lookback))
         self.cost_rate = cost_bps / 10_000.0
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
@@ -142,6 +148,8 @@ class CrossSectionalBacktester:
                     scores, leverage=self.leverage, top_k=self.top_k,
                     neutralize=self.neutralize,
                 )
+                if self.min_short_dv is not None:
+                    w_target = self._apply_shortability(w_target, t)
                 if self.vol_target is not None:
                     w_target = self._vol_scale(w_target, rets, t)
                 turnover = float(np.abs(w_target - w_drifted).sum())
@@ -190,6 +198,23 @@ class CrossSectionalBacktester:
                 "rebalance_every": self.rebalance_every,
             },
         )
+
+    def _apply_shortability(self, weights: np.ndarray, t: int) -> np.ndarray:
+        """Zero out shorts in names too illiquid to actually borrow/short.
+
+        Shortability is judged only on *past* liquidity (trailing dollar volume),
+        so it never uses the fact that a coin will later delist — yet a fading
+        coin's volume dries up on its own, blocking shorts into delisting. Longs
+        are untouched (you can always buy). The book simply shrinks where a short
+        wasn't executable — the honest outcome, not a magic re-hedge.
+        """
+        lo = max(0, t - self.short_dv_lookback + 1)
+        window = self.closes[lo : t + 1] * self.volumes[lo : t + 1]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN slices -> NaN
+            dv = np.nanmean(window, axis=0)
+        blocked = ~(dv >= self.min_short_dv)  # NaN or below threshold -> blocked
+        return np.where(blocked & (weights < 0), 0.0, weights)
 
     def _vol_scale(self, weights: np.ndarray, rets: np.ndarray, t: int) -> np.ndarray:
         """Scale weights so the book's predicted volatility hits ``vol_target``.

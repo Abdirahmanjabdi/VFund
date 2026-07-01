@@ -44,8 +44,9 @@ def _r(res):
     return eq[1:] / eq[:-1] - 1.0, np.array([int(str(t)[:4]) for t in ts])
 
 
-def combo(panel, short_cost):
-    common = dict(interval="1d", cost_bps=10, short_cost_bps_annual=short_cost)
+def combo(panel, short_cost, min_short_dv=None):
+    common = dict(interval="1d", cost_bps=10, short_cost_bps_annual=short_cost,
+                  min_short_dollar_volume=min_short_dv)
     t, yr = _r(CrossSectionalBacktester(
         panel, TimeSeriesTrendEnsemble(), rebalance_every=7, neutralize=False,
         vol_target=0.30, vol_lookback=30, max_leverage=3.0, **common).run())
@@ -58,8 +59,8 @@ def combo(panel, short_cost):
     return wa * t + wb * s, yr
 
 
-def row(label, panel, short_cost):
-    r, yr = combo(panel, short_cost)
+def row(label, panel, short_cost, min_short_dv=None):
+    r, yr = combo(panel, short_cost, min_short_dv)
     ins, oos = yr < 2025, yr >= 2025
     print(f"{label:>34} | {sharpe_ratio(r,PPY):>6.2f} {sharpe_ratio(r[ins],PPY):>7.2f} "
           f"{sharpe_ratio(r[oos],PPY):>8.2f} {(np.prod(1+r[oos])-1)*100:>7.0f}%")
@@ -80,13 +81,16 @@ except FileNotFoundError:
 
 try:
     broad = clean_universe(load_panel("data/uni_broad.parquet"))
-    row(f"broad({broad['symbol'].n_unique()}), 10%/yr shorts", broad, 1000)
     dead = load_panel("data/delisted.parquet")
     pit_broad = pl.concat([broad, dead])
-    row(f"broad+dead({pit_broad['symbol'].n_unique()}), 10%/yr", pit_broad, 1000)
+    n = pit_broad["symbol"].n_unique()
+    row(f"broad+dead({n}), free shorts", pit_broad, 1000)
+    # Hard-to-short: a coin is only shortable with enough recent liquidity.
+    row(f"broad+dead, no-short <$1M/day", pit_broad, 1000, 1_000_000)
+    row(f"broad+dead, no-short <$5M/day", pit_broad, 1000, 5_000_000)
+    row(f"broad+dead, no-short <$20M/day", pit_broad, 1000, 20_000_000)
 except FileNotFoundError:
     print("  (broad/delisted parquet not found - fetch to compare)")
 
-print("\nAdding the coins that DIED is the real survivorship fix. If in-sample")
-print("drops toward out-of-sample, the earlier IS was survivorship inflation.")
-print("The bottom rows are the most honest numbers we can produce for free.")
+print("\nThe last rows forbid shorting illiquid names (you can't borrow them).")
+print("If OOS survives even the $20M/day gate, the edge isn't just shorting dust.")
