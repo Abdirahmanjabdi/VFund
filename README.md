@@ -1,16 +1,8 @@
 # VFund
 
+[![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-60%20passing-brightgreen)](tests/)
-
-<!-- CI badge (uncomment once GitHub Actions is enabled on the account):
-[![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
--->
-
-> Continuous integration is configured in `.github/workflows/ci.yml` and runs the
-> full suite on Python 3.11 & 3.12. It will activate once GitHub Actions is
-> enabled for the account.
 
 **An open-source quant research & trading platform — open tools, private edge.**
 
