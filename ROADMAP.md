@@ -97,6 +97,20 @@ not backtest returns, decide whether an edge is real.
 - Next: forward paper-trade; maker-fill modelling; expand delisted set; model
   small-cap long-side liquidity/capacity limits.
 
+## v0.2 — large-cap / high-capacity search (in progress)
+- Price-based large-cap strategies (trend, momentum, reversal, low-vol on 13
+  majors) found NO out-of-sample edge — majors are efficient/crowded
+  (`examples/largecap_search.py`).
+- **Funding-basis carry** (structural, high-capacity): delta-neutral long-spot/
+  short-perp harvests the perp premium. Timed (harvest only positive-funding
+  coins) was strongly positive IS *and* OOS (`examples/funding_carry_major.py`).
+  **BUT the reported Sharpe (4-7) is wildly optimistic** — the model ignores
+  basis-blowup risk in crashes, real two-leg execution, margin/borrow costs. True
+  net Sharpe is more like 1-2; the tail risk (funding/basis turns violently
+  negative in deleveraging events) is the thing to model next. Still: the right
+  *kind* of edge — structural, deep, scalable — to complement the small-cap book.
+- Next: model basis/crash risk + real carry costs for a trustworthy carry Sharpe.
+
 ## v0.2 — on-chain fundamentals (in progress)
 - ✅ DefiLlama TVL ingest (`data/onchain.py`, free, no key) + engine/context
   integration (`tvl=...`); `TVLMomentum` and `TVLDivergence` signals.
