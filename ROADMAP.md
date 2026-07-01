@@ -56,9 +56,14 @@ not backtest returns, decide whether an edge is real.
   **Combined portfolio (full cycle, beta-adjusted): Sharpe 1.58, max DD -29%
   (vs -79% buy&hold), alpha ~33%/yr with t ≈ 2.7**, trend/size correlation ≈ 0.
   Two weakly-correlated, beta-adjusted-real edges beat either alone.
-- Next (to move from "promising" to "tradable"): run the combined book through
-  the robustness harness (universe bootstrap + deflated Sharpe on the whole
-  search), more bear cycles, true market-cap for size, and short-side frictions.
+- ✅ Combined book through the robustness harness (`examples/robustness_combined.py`):
+  **PASSED** — universe bootstrap 100% positive (5th-pct Sharpe 0.96), 5/6
+  sub-periods positive, alpha t 2.8, Deflated Sharpe 99% over 18 configs. First
+  candidate all project to survive the gauntlet that rejected carry.
+- **Biggest remaining risk — survivorship bias:** the universe is coins that
+  *survived* 2021-2024; delisted/dead coins are excluded, which inflates results.
+  Fix before trusting it. Then: forward paper-trade (true OOS), model short-side
+  frictions (borrow/liquidation), true market-cap for size, more bear cycles.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples
