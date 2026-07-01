@@ -48,7 +48,16 @@ python examples/bench_sim.py
 ```
 
 `bench_sim.py` cross-checks that the Rust and Python results are identical, then
-reports the speedup (typically an order of magnitude on large problems).
+reports the speedup. A measured run (43,800 bars × 50 assets, 260 rebalances)
+on Windows with the GNU toolchain:
+
+```
+  Python reference :    326.4 ms
+  Rust core        :      4.2 ms   (77.2x faster, results match)
+```
+
+~77× on the hot loop — the kind of speedup that turns an overnight robustness
+sweep into a coffee break.
 
 ## Why this is worth doing
 

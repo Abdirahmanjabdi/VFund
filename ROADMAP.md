@@ -125,8 +125,10 @@ not backtest returns, decide whether an edge is real.
   proves the primitive reproduces the full engine's equity curve exactly.
 - ✅ `rust/` — a PyO3 (`vfund_core`) extension implementing the identical loop;
   `_accel.py` auto-detects it; `examples/bench_sim.py` benchmarks + cross-checks.
-  Build with `maturin develop --release` (needs Rust + a C linker). See
-  [docs/RUST.md](docs/RUST.md). Falls back to pure Python when not built.
+  **Built and verified: ~77× faster (326ms → 4.2ms on 43.8k bars × 50 assets),
+  results identical.** Build with `maturin develop --release` (GNU toolchain
+  works with no MSVC). See [docs/RUST.md](docs/RUST.md). Falls back to pure
+  Python when not built.
 - Next: wire `simulate` into the engine's `run()` behind the fallback; port the
   order-book / tick reconstruction path; broaden the native surface.
 - Vectorised indicator library (RSI, ATR, z-score, …)
