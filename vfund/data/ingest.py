@@ -19,6 +19,7 @@ from vfund.data.intervals import INTERVAL_MS
 from vfund.data.models import validate_bars
 
 _BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
+_BINANCE_FUTURES_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
 _MAX_LIMIT = 1000  # Binance hard cap per request.
 
 
@@ -38,12 +39,15 @@ def fetch_klines(
     end: datetime | str | None = None,
     session: requests.Session | None = None,
     pause_s: float = 0.25,
+    futures: bool = False,
 ) -> pl.DataFrame:
     """Fetch OHLCV bars for ``symbol`` between ``start`` and ``end``.
 
     Paginates transparently across Binance's 1000-bar limit. Returns a frame in
     VFund's canonical schema. ``symbol`` is a Binance pair like ``"BTCUSDT"``.
+    Set ``futures=True`` for USD-M perpetual (mark) prices instead of spot.
     """
+    url = _BINANCE_FUTURES_KLINES_URL if futures else _BINANCE_KLINES_URL
     if interval not in INTERVAL_MS:
         raise ValueError(f"unknown interval {interval!r}; known: {sorted(INTERVAL_MS)}")
 
@@ -63,7 +67,7 @@ def fetch_klines(
             "endTime": end_ms,
             "limit": _MAX_LIMIT,
         }
-        resp = sess.get(_BINANCE_KLINES_URL, params=params, timeout=30)
+        resp = sess.get(url, params=params, timeout=30)
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
