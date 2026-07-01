@@ -118,6 +118,17 @@ not backtest returns, decide whether an edge is real.
   drawdowns — cut worst drawdown ~47% → ~30%, trading some return for safety.
 - Next hardening: maker-fill modelling (revive reversal), liquidity-aware
   slippage, expand delisted set.
+
+## v0.3 — native core (Rust, optional)
+- ✅ Isolated the simulation hot loop into `vfund/backtest/sim.py` (`simulate_py`,
+  the spec) with a dispatch to a native core if present. `tests/test_sim.py`
+  proves the primitive reproduces the full engine's equity curve exactly.
+- ✅ `rust/` — a PyO3 (`vfund_core`) extension implementing the identical loop;
+  `_accel.py` auto-detects it; `examples/bench_sim.py` benchmarks + cross-checks.
+  Build with `maturin develop --release` (needs Rust + a C linker). See
+  [docs/RUST.md](docs/RUST.md). Falls back to pure Python when not built.
+- Next: wire `simulate` into the engine's `run()` behind the fallback; port the
+  order-book / tick reconstruction path; broaden the native surface.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

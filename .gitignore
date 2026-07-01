@@ -15,6 +15,11 @@ env/
 .ruff_cache/
 .ipynb_checkpoints/
 
+# Rust build artifacts
+rust/target/
+*.so
+*.pyd
+
 # VFund data & results (local-first — never commit market data or runs).
 # Anchored to the repo root so they do NOT match the vfund/data source package.
 /data/
