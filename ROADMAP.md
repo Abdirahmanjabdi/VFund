@@ -127,8 +127,14 @@ not backtest returns, decide whether an edge is real.
   model ignores adverse selection (you get filled exactly when the market moves
   against you) — the real maker killer — so those Sharpes are optimistic. Needs
   a proper order-book / tick simulator to validate.**
-- Next: order-book/tick reconstruction + adverse-selection modelling; liquidity-
-  aware slippage; expand delisted set.
+- ✅ Microstructure layer (`vfund/microstructure/`): a price-time `LimitOrderBook`
+  + matching engine, and a `MarketMakingSim` that models informed/uninformed
+  flow. It reproduces **adverse selection** from first principles (realised-spread
+  P&L): a maker earns the spread on noise flow but gets picked off by informed
+  flow — losing money at tight spreads, exactly why the naive maker-reversal
+  Sharpes were optimistic. See `examples/microstructure_adverse_selection.py`.
+- Next: replay real L2/tick data through the book; simulate reversal as a maker
+  under adverse selection to get its true Sharpe; port the book to Rust.
 
 ## v0.3 — native core (Rust, optional)
 - ✅ Isolated the simulation hot loop into `vfund/backtest/sim.py` (`simulate_py`,
