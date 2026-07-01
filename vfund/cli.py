@@ -138,30 +138,37 @@ def cmd_fetch_funding(args) -> int:
     return 0
 
 
-def cmd_signal(args) -> int:
+def _load_clean(path):
     from vfund.data.panel import load_panel
+    from vfund.data.universe import clean_universe
+
+    return clean_universe(load_panel(path))
+
+
+def cmd_signal(args) -> int:
     from vfund.live.signal import combined_book, format_book
 
-    panel = load_panel(args.data)
+    panel = _load_clean(args.data)
     book = combined_book(
         panel, size_lookback=args.size_lookback, vol_target=args.vol_target,
         top_k=args.top_k, interval=args.interval,
+        min_short_dollar_volume=args.min_short_dv,
     )
     print(format_book(book))
     return 0
 
 
 def cmd_paper(args) -> int:
-    from vfund.data.panel import load_panel
     from vfund.live.paper import PaperTracker
     from vfund.live.signal import format_book
 
-    panel = load_panel(args.data)
+    panel = _load_clean(args.data)
     tracker = PaperTracker(args.state, start_equity=args.start_equity)
     res = tracker.update(
         panel, cost_bps=args.cost_bps,
         size_lookback=args.size_lookback, vol_target=args.vol_target,
         top_k=args.top_k, interval=args.interval,
+        min_short_dollar_volume=args.min_short_dv,
     )
     st = tracker.load()
     ret = st["equity"] / st["start_equity"] - 1.0
@@ -337,6 +344,8 @@ def build_parser() -> argparse.ArgumentParser:
     sig.add_argument("--size-lookback", type=int, default=20)
     sig.add_argument("--vol-target", type=float, default=0.30)
     sig.add_argument("--top-k", type=int, default=5)
+    sig.add_argument("--min-short-dv", type=float, default=5_000_000,
+                     help="min trailing $/day to short a name (hard-to-short gate)")
     sig.set_defaults(func=cmd_signal)
 
     # paper — forward-track a hypothetical account
@@ -349,6 +358,8 @@ def build_parser() -> argparse.ArgumentParser:
     pap.add_argument("--size-lookback", type=int, default=20)
     pap.add_argument("--vol-target", type=float, default=0.30)
     pap.add_argument("--top-k", type=int, default=5)
+    pap.add_argument("--min-short-dv", type=float, default=5_000_000,
+                     help="min trailing $/day to short a name (hard-to-short gate)")
     pap.set_defaults(func=cmd_paper)
 
     return parser

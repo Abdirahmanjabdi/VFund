@@ -173,12 +173,21 @@ data — Sharpe ~1.6, alpha t ≈ 2.7, Deflated Sharpe ~99% over the configs tri
 ([`examples/build_edge.py`](examples/build_edge.py),
 [`examples/robustness_combined.py`](examples/robustness_combined.py)).
 
-```bash
-# What should I hold right now? (long/short target weights)
-vfund signal --data data/uni_daily.parquet
+The live signal runs the **validated** configuration — a broad, cleaned universe
+(stablecoins/pegs/thin listings removed) with the hard-to-short gate (only short
+names with enough recent liquidity).
 
-# Forward-track a hypothetical account as new data arrives (the real OOS test)
-vfund paper --data data/uni_daily.parquet --state data/paper.json --start-equity 10000
+```bash
+# 1. Fetch a broad current universe
+vfund fetch-universe --top 60 --interval 1d --start 2021-01-01 --out data/live.parquet
+
+# 2. What should I hold right now? (long small-caps, short liquid majors)
+vfund signal --data data/live.parquet
+
+# 3. Forward-track a hypothetical account. Re-fetch (step 1) and re-run this
+#    periodically to accumulate a clean, never-seen out-of-sample record — the
+#    only honest test left once the historical OOS window has been studied.
+vfund paper --data data/live.parquet --state data/paper.json --start-equity 100000
 ```
 
 ## Known limitations — read before trusting any number

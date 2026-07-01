@@ -18,11 +18,12 @@ from vfund.live.signal import combined_book
 
 
 def _latest_prices(panel: pl.DataFrame):
-    wide = pivot_to_wide(panel, "close")
+    # Ragged: the true latest bar; skip coins with no price then (delisted).
+    wide = pivot_to_wide(panel, "close", drop_incomplete=False)
     symbols = [c for c in wide.columns if c != "timestamp"]
     row = wide.tail(1)
     ts = str(row["timestamp"][0])
-    prices = {s: float(row[s][0]) for s in symbols}
+    prices = {s: float(row[s][0]) for s in symbols if row[s][0] is not None}
     return ts, prices
 
 

@@ -16,12 +16,15 @@ front and centre rather than an afterthought.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import polars as pl
 
-from vfund.backtest.construct import scores_to_weights, vol_scale_weights
+from vfund.backtest.construct import (
+    scores_to_weights,
+    short_liquidity_mask,
+    trailing_dollar_volume,
+    vol_scale_weights,
+)
 from vfund.backtest.result import BacktestResult
 from vfund.data.intervals import bars_per_year as _bars_per_year
 from vfund.data.panel import align_funding, pivot_to_wide, validate_panel
@@ -208,13 +211,8 @@ class CrossSectionalBacktester:
         are untouched (you can always buy). The book simply shrinks where a short
         wasn't executable — the honest outcome, not a magic re-hedge.
         """
-        lo = max(0, t - self.short_dv_lookback + 1)
-        window = self.closes[lo : t + 1] * self.volumes[lo : t + 1]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN slices -> NaN
-            dv = np.nanmean(window, axis=0)
-        blocked = ~(dv >= self.min_short_dv)  # NaN or below threshold -> blocked
-        return np.where(blocked & (weights < 0), 0.0, weights)
+        dv = trailing_dollar_volume(self.closes, self.volumes, t, self.short_dv_lookback)
+        return short_liquidity_mask(weights, dv, self.min_short_dv)
 
     def _vol_scale(self, weights: np.ndarray, rets: np.ndarray, t: int) -> np.ndarray:
         """Scale weights so the book's predicted volatility hits ``vol_target``.

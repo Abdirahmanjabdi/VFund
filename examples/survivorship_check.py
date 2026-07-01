@@ -17,25 +17,10 @@ import polars as pl
 from vfund.analytics.performance import sharpe_ratio
 from vfund.backtest.cross_sectional import CrossSectionalBacktester
 from vfund.data.panel import load_panel
+from vfund.data.universe import clean_universe
 from vfund.strategy import CrossSectionalSize, TimeSeriesTrendEnsemble
 
 PPY = 365
-
-# Not tradable-alpha assets: stablecoins and metal-pegged tokens. "Top by volume"
-# drags these in, so a clean universe must exclude them.
-PEGGED = {"USDCUSDT", "USD1USDT", "FDUSDUSDT", "EURUSDT", "RLUSDUSDT", "TUSDUSDT",
-          "DAIUSDT", "PYUSDUSDT", "USDPUSDT", "BUSDUSDT", "PAXGUSDT", "XAUTUSDT"}
-
-
-def clean_universe(panel, min_bars=365):
-    """Drop pegged tokens, non-standard symbols, and coins with < min_bars history."""
-    counts = panel.group_by("symbol").agg(pl.len().alias("n"))
-    enough = counts.filter(pl.col("n") >= min_bars)["symbol"].to_list()
-    return panel.filter(
-        pl.col("symbol").is_in(enough)
-        & ~pl.col("symbol").is_in(list(PEGGED))
-        & pl.col("symbol").str.contains(r"^[A-Z0-9]+USDT$")
-    )
 
 
 def _r(res):

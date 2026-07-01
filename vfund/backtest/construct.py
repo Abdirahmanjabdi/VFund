@@ -13,6 +13,7 @@ usually cleaner and cheaper than spreading thin across the whole universe.
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
@@ -60,6 +61,29 @@ def scores_to_weights(
         book = book / gross * leverage
     w[valid] = book
     return w
+
+
+def trailing_dollar_volume(
+    closes: np.ndarray, volumes: np.ndarray, i: int, lookback: int
+) -> np.ndarray:
+    """Average dollar volume (price x volume) per asset over the trailing window."""
+    lo = max(0, i - lookback + 1)
+    window = closes[lo : i + 1] * volumes[lo : i + 1]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN slices -> NaN
+        return np.nanmean(window, axis=0)
+
+
+def short_liquidity_mask(
+    weights: np.ndarray, trailing_dv: np.ndarray, min_dv: float
+) -> np.ndarray:
+    """Zero short weights on names below ``min_dv`` trailing dollar volume.
+
+    You can't borrow/short an illiquid coin. Longs are untouched (you can always
+    buy). Judged only on past liquidity, so it never peeks at a future delisting.
+    """
+    blocked = ~(trailing_dv >= min_dv)  # NaN or below threshold -> blocked
+    return np.where(blocked & (weights < 0), 0.0, weights)
 
 
 def vol_scale_weights(
