@@ -82,6 +82,34 @@ def cagr(equity: np.ndarray, periods_per_year: float) -> float:
     return float(total_return ** (1 / years) - 1.0)
 
 
+def alpha_beta(returns: np.ndarray, benchmark: np.ndarray, periods_per_year: float) -> dict:
+    """Regress strategy returns on a benchmark to separate alpha from beta.
+
+    The single most important adjustment for a *directional* strategy: a book
+    that's long in a bull market looks brilliant, but most of that is just market
+    exposure (beta). Real skill is the intercept (alpha) that survives *after*
+    subtracting beta times the market. A high alpha t-stat (> ~2) is the bar.
+
+    Returns annualised alpha, beta, and the alpha t-statistic.
+    """
+    r = np.asarray(returns, float)
+    b = np.asarray(benchmark, float)
+    n = min(r.size, b.size)
+    if n < 3:
+        return {"alpha_ann": 0.0, "beta": 0.0, "alpha_t": 0.0}
+    r, b = r[-n:], b[-n:]
+    X = np.column_stack([np.ones(n), b])
+    coef, _, _, _ = np.linalg.lstsq(X, r, rcond=None)
+    alpha_per, beta = float(coef[0]), float(coef[1])
+    resid = r - X @ coef
+    dof = max(n - 2, 1)
+    s2 = float(resid @ resid) / dof
+    xtx_inv = np.linalg.inv(X.T @ X)
+    se_alpha = math.sqrt(s2 * xtx_inv[0, 0]) if s2 > 0 else 0.0
+    t_alpha = alpha_per / se_alpha if se_alpha > 0 else 0.0
+    return {"alpha_ann": alpha_per * periods_per_year, "beta": beta, "alpha_t": t_alpha}
+
+
 def compute_metrics(result) -> dict:
     """Compute the full metric set for a ``BacktestResult``."""
     equity = result.equity_curve["equity"].to_numpy()

@@ -189,3 +189,34 @@ class TimeSeriesTrend(CrossSectionalStrategy):
             return np.full(closes.shape[1], np.nan)
         trailing = closes[-1] / closes[-1 - self.lookback] - 1.0
         return np.sign(trailing)  # +1 uptrend (long), -1 downtrend (short)
+
+
+class TimeSeriesTrendEnsemble(CrossSectionalStrategy):
+    """Multi-horizon trend — the managed-futures answer to lookback fragility.
+
+    A single trend lookback is a bet on one speed; the best one in-sample is
+    rarely the best out-of-sample. Real CTAs average signals across many
+    horizons instead. Score = the mean of the per-horizon trend signs, so a coin
+    trending up on every timescale gets +1, one with mixed signals gets a small
+    number, and the book leans toward the clearest trends. Directional — run with
+    ``neutralize=False``.
+
+    Reference: Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following".
+    """
+
+    def __init__(self, lookbacks=(20, 30, 50, 100)):
+        self.lookbacks = tuple(int(x) for x in lookbacks)
+        if min(self.lookbacks) < 1:
+            raise ValueError("lookbacks must be >= 1")
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        n = closes.shape[0]
+        signals = [
+            np.sign(closes[-1] / closes[-1 - lb] - 1.0)
+            for lb in self.lookbacks
+            if n > lb
+        ]
+        if not signals:
+            return np.full(closes.shape[1], np.nan)
+        return np.mean(signals, axis=0)

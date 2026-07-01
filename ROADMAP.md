@@ -43,7 +43,16 @@ not backtest returns, decide whether an edge is real.
   no *market-neutral* edge passed; time-series trend "passed" only because it
   rode market beta (Sharpe 1.66 vs 1.33 buy-and-hold) — needs a bear-market
   sample and beta-adjustment to judge as alpha.
-- Bear-market data (e.g. 2022) + beta-adjusted (alpha vs buy-and-hold) evaluation
+- ✅ Bull+bear cycle test + beta-adjusted evaluation (`alpha_beta`,
+  `examples/trend_cycle.py`). **Finding:** over 2021-2024, time-series trend
+  shows *real* crisis alpha — beta ≈ 0, alpha ≈ 62%/yr (t ≈ 2), and it made
+  +7% through the 2022 bear while buy-and-hold lost -74%. Grounded in the
+  trend-following / managed-futures literature (Hurst-Ooi-Pedersen; crypto
+  momentum in Liu-Tsyvinski-Wu, *J. Finance* 2022).
+- ✅ `TimeSeriesTrendEnsemble` — multi-horizon trend (fixes single-lookback
+  fragility); slightly lower point estimate (alpha t ≈ 1.7) but more robust.
+- Next on trend: vol-targeting/position sizing, more cycles/universes, and
+  deflated-Sharpe on the lookback search before trusting it as tradable.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

@@ -4,10 +4,12 @@ import numpy as np
 
 from vfund.backtest.cross_sectional import CrossSectionalBacktester
 from vfund.data.synthetic import generate_gbm_panel
+from vfund.analytics.performance import alpha_beta
 from vfund.strategy import (
     CrossSectionalLowVol,
     CrossSectionalValue,
     TimeSeriesTrend,
+    TimeSeriesTrendEnsemble,
 )
 from vfund.strategy.cross_sectional import PanelContext
 
@@ -45,3 +47,29 @@ def test_trend_is_directional_long_in_uptrend():
     ).run()
     # Gross exposure is used; the run should produce a non-flat equity path.
     assert res.equity_curve["gross_exposure"].max() > 0
+
+
+def test_ensemble_averages_horizons():
+    # A coin up on all horizons -> +1; the ensemble should be bounded in [-1, 1].
+    closes = np.column_stack([np.linspace(50, 150, 300), np.linspace(150, 50, 300)])
+    ctx = PanelContext(299, closes, ["UP", "DOWN"])
+    s = TimeSeriesTrendEnsemble(lookbacks=(20, 50, 100)).scores(ctx)
+    assert abs(s[0] - 1.0) < 1e-9 and abs(s[1] + 1.0) < 1e-9
+
+
+def test_alpha_beta_recovers_known_beta():
+    rng = np.random.default_rng(0)
+    bench = 0.01 * rng.standard_normal(4000)
+    strat = 2.0 * bench + 0.0005  # beta 2, small constant alpha, no idio noise
+    ab = alpha_beta(strat, bench, periods_per_year=365)
+    assert abs(ab["beta"] - 2.0) < 1e-6
+    assert ab["alpha_ann"] > 0  # positive intercept detected
+
+
+def test_alpha_beta_insignificant_for_pure_beta():
+    rng = np.random.default_rng(1)
+    bench = 0.01 * rng.standard_normal(4000)
+    strat = 0.5 * bench + 0.001 * rng.standard_normal(4000)  # scaled beta, no true alpha
+    ab = alpha_beta(strat, bench, periods_per_year=365)
+    assert abs(ab["beta"] - 0.5) < 0.05
+    assert abs(ab["alpha_t"]) < 2.0  # alpha not statistically significant
