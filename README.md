@@ -231,6 +231,11 @@ Each layer maps to a job on a quant desk — that's deliberate. See
 [ROADMAP.md](ROADMAP.md) for where it's headed (order-book data, live execution,
 a research copilot) and how the build doubles as a curriculum.
 
+## Learn more
+
+[docs/OVERVIEW.md](docs/OVERVIEW.md) — architecture, the anti-self-deception
+philosophy, and how to reproduce the research end to end.
+
 ## Develop
 
 ```bash

@@ -25,3 +25,8 @@ results/
 .DS_Store
 .idea/
 .vscode/
+
+# Private notes — never publish (the personal guide lives outside the repo)
+*_PRIVATE*.md
+paper*.json
+paper_log.txt
