@@ -60,10 +60,17 @@ not backtest returns, decide whether an edge is real.
   **PASSED** — universe bootstrap 100% positive (5th-pct Sharpe 0.96), 5/6
   sub-periods positive, alpha t 2.8, Deflated Sharpe 99% over 18 configs. First
   candidate all project to survive the gauntlet that rejected carry.
+- **REALITY CHECK — the edge FAILED out-of-sample.** Extending to 2025-2026
+  (data the config never saw), the combined book returned **-13% (Sharpe -0.45)**
+  vs +235% in-sample (`examples/account_100k.py`). Both sleeves broke: trend
+  flatlined (no crash to exploit), and the size premium *reversed* (big caps
+  led). In-sample robustness — even Deflated Sharpe 99% — did **not** survive
+  live time. This is the whole point of the platform: we found it on paper, not
+  with real money.
 - **Biggest remaining risk — survivorship bias:** the universe is coins that
-  *survived* 2021-2024; delisted/dead coins are excluded, which inflates results.
-  Fix before trusting it. Then: forward paper-trade (true OOS), model short-side
-  frictions (borrow/liquidation), true market-cap for size, more bear cycles.
+  *survived*; delisted/dead coins are excluded, inflating in-sample results.
+- Where next: this edge is not tradable. Keep searching for signals that persist
+  OOS; fix survivorship; model short-side frictions; expect most ideas to die.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples
