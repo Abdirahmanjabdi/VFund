@@ -96,6 +96,17 @@ not backtest returns, decide whether an edge is real.
   test left is forward paper-trading on untouched 2026+ data.
 - Next: forward paper-trade; maker-fill modelling; expand delisted set; model
   small-cap long-side liquidity/capacity limits.
+
+## v0.2 — on-chain fundamentals (in progress)
+- ✅ DefiLlama TVL ingest (`data/onchain.py`, free, no key) + engine/context
+  integration (`tvl=...`); `TVLMomentum` and `TVLDivergence` signals.
+- **Finding (26 DeFi coins, select IS 2021-24, judge OOS 2025-26):** naive TVL
+  momentum is dead (IS 0.23 / OOS 0.09); **TVL *divergence*** (long coins whose
+  on-chain usage grew but whose price lagged — a fundamental value bet) is the
+  first *new* signal positive in BOTH periods (IS 1.09 / OOS 0.44) — differentiated,
+  less-crowded data. Promising lead, not confirmed (small universe, OOS peeked).
+- Next on-chain: fees/revenue and stablecoin-flow signals; larger coin coverage;
+  combine TVL-value with the trend/size book.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

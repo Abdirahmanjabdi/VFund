@@ -30,7 +30,7 @@ class PanelContext:
     so, as in the single-asset engine, the future is simply not in scope.
     """
 
-    __slots__ = ("i", "_closes", "symbols", "_funding", "_volumes")
+    __slots__ = ("i", "_closes", "symbols", "_funding", "_volumes", "_tvl")
 
     def __init__(
         self,
@@ -39,12 +39,14 @@ class PanelContext:
         symbols: list[str],
         funding: np.ndarray | None = None,
         volumes: np.ndarray | None = None,
+        tvl: np.ndarray | None = None,
     ):
         self.i = i
         self._closes = closes
         self.symbols = symbols
         self._funding = funding
         self._volumes = volumes
+        self._tvl = tvl
 
     @property
     def closes(self) -> np.ndarray:
@@ -63,6 +65,13 @@ class PanelContext:
         if self._volumes is None:
             return None
         return self._volumes[: self.i + 1]
+
+    @property
+    def tvl(self) -> np.ndarray | None:
+        """On-chain TVL (forward-filled) up to now, or None."""
+        if self._tvl is None:
+            return None
+        return self._tvl[: self.i + 1]
 
     @property
     def n_seen(self) -> int:
@@ -278,6 +287,60 @@ class CrossSectionalIlliquidity(CrossSectionalStrategy):
         dollar_vol = closes[-self.lookback :] * vols[-self.lookback :]
         illiq = (abs_ret / np.maximum(dollar_vol, 1e-9)).mean(axis=0)
         return illiq  # long illiquid (high Amihud)
+
+
+class TVLMomentum(CrossSectionalStrategy):
+    """On-chain fundamental momentum: long protocols gaining real capital.
+
+    TVL (total value locked) measures the capital actually deposited in a
+    protocol — real usage, not price. When TVL grows, users are voting with their
+    money; token price has historically tended to follow. Score = TVL growth over
+    the lookback. Long the fastest-growing, short the shrinking. Needs a
+    TVL-aware backtest (``CrossSectionalBacktester(..., tvl=...)``).
+    """
+
+    def __init__(self, lookback: int = 30):
+        if lookback < 2:
+            raise ValueError("lookback must be >= 2")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        tvl = ctx.tvl
+        if tvl is None:
+            raise ValueError("TVLMomentum needs TVL data — pass tvl=... to the backtester")
+        if tvl.shape[0] <= self.lookback:
+            return np.full(tvl.shape[1], np.nan)
+        past = tvl[-1 - self.lookback]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            growth = np.where(past > 0, tvl[-1] / past - 1.0, np.nan)
+        return growth  # long rising TVL, short shrinking
+
+
+class TVLDivergence(CrossSectionalStrategy):
+    """Fundamental value: long coins whose usage grew but whose price lagged.
+
+    Compares TVL growth to price growth over the lookback. If real capital poured
+    in (TVL up) but the token barely moved, it's arguably cheap — buy it; if price
+    ran far ahead of fundamentals, short it. This is a 'value' bet anchored to
+    on-chain reality rather than price alone. Needs a TVL-aware backtest.
+    """
+
+    def __init__(self, lookback: int = 60):
+        if lookback < 2:
+            raise ValueError("lookback must be >= 2")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        tvl, closes = ctx.tvl, ctx.closes
+        if tvl is None:
+            raise ValueError("TVLDivergence needs TVL data — pass tvl=... to the backtester")
+        if tvl.shape[0] <= self.lookback:
+            return np.full(tvl.shape[1], np.nan)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tvl_g = np.where(tvl[-1 - self.lookback] > 0,
+                             tvl[-1] / tvl[-1 - self.lookback] - 1.0, np.nan)
+            px_g = closes[-1] / closes[-1 - self.lookback] - 1.0
+        return tvl_g - px_g  # usage grew faster than price -> long (cheap)
 
 
 class TimeSeriesTrend(CrossSectionalStrategy):

@@ -45,6 +45,7 @@ class CrossSectionalBacktester:
         interval: str = "1h",
         initial_cash: float = 10_000.0,
         funding: pl.DataFrame | None = None,
+        tvl: pl.DataFrame | None = None,
         vol_target: float | None = None,
         vol_lookback: int = 30,
         max_leverage: float = 3.0,
@@ -75,6 +76,14 @@ class CrossSectionalBacktester:
             )
         else:
             self.funding_event = self.funding_prevailing = None
+
+        # Optional on-chain TVL overlay, forward-filled to the price timeline.
+        if tvl is not None:
+            from vfund.data.onchain import align_tvl
+
+            self.tvl = align_tvl(tvl, self.timestamps, self.symbols)
+        else:
+            self.tvl = None
 
         self.strategy = strategy
         self.rebalance_every = max(1, int(rebalance_every))
@@ -145,6 +154,7 @@ class CrossSectionalBacktester:
                 ctx = PanelContext(
                     t, C, self.symbols,
                     funding=self.funding_prevailing, volumes=self.volumes,
+                    tvl=self.tvl,
                 )
                 scores = self.strategy.scores(ctx)
                 w_target = scores_to_weights(
