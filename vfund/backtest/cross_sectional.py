@@ -19,12 +19,14 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from vfund.backtest._accel import HAVE_RUST
 from vfund.backtest.construct import (
     scores_to_weights,
     short_liquidity_mask,
     trailing_dollar_volume,
     vol_scale_weights,
 )
+from vfund.backtest.sim import simulate
 from vfund.backtest.result import BacktestResult
 from vfund.data.intervals import bars_per_year as _bars_per_year
 from vfund.data.panel import align_funding, pivot_to_wide, validate_panel
@@ -119,66 +121,90 @@ class CrossSectionalBacktester:
 
         # Per-bar simple returns; row t is the return from t-1 to t. On a ragged
         # panel, returns touching a null (pre-listing or post-delisting) are set
-        # to 0 — a held coin that delists simply stops contributing, and we exit
-        # it below. Fully-aligned panels have no nulls, so behaviour is unchanged.
+        # to 0 — a held coin that delists simply stops contributing and is exited.
         rets = np.zeros_like(C)
         rets[1:] = C[1:] / C[:-1] - 1.0
         rets = np.where(np.isfinite(rets), rets, 0.0)
         tradable = np.isfinite(C)
 
+        # Fast path: the drawdown circuit-breaker needs running equity, so it
+        # can't be precomputed; without it we precompute the rebalance schedule
+        # and hand the T-length loop to the native Rust core. Results are
+        # identical to the Python loop (verified in tests/test_sim.py).
+        if HAVE_RUST and self.dd_derisk_start is None:
+            return self._run_fast(rets, tradable)
+        return self._run_py(rets, tradable)
+
+    def _target_weights(self, t: int, rets: np.ndarray) -> np.ndarray:
+        """Target weights at a rebalance bar (all overlays except drawdown)."""
+        ctx = PanelContext(
+            t, self.closes, self.symbols,
+            funding=self.funding_prevailing, volumes=self.volumes, tvl=self.tvl,
+        )
+        w = scores_to_weights(
+            self.strategy.scores(ctx), leverage=self.leverage,
+            top_k=self.top_k, neutralize=self.neutralize,
+        )
+        if self.min_short_dv is not None:
+            w = self._apply_shortability(w, t)
+        if self.vol_target is not None:
+            w = self._vol_scale(w, rets, t)
+        if self.capacity_aum is not None:
+            w = self._apply_capacity(w, t)
+        return w
+
+    def _run_fast(self, rets: np.ndarray, tradable: np.ndarray) -> BacktestResult:
+        T, N = self.closes.shape
+        reb_bars = [t for t in range(1, T) if t % self.rebalance_every == 0]
+        reb_idx = np.asarray(reb_bars, dtype=np.int64)
+        reb_w = np.zeros((len(reb_bars), N))
+        for j, t in enumerate(reb_bars):
+            reb_w[j] = self._target_weights(t, rets)
+
+        equity, turnovers, gross = simulate(
+            rets, reb_idx, reb_w,
+            initial=self.initial_cash, cost_rate=self.cost_rate,
+            short_cost_per_bar=self.short_cost_annual / self.bars_per_year,
+            funding=self.funding_event, tradable=tradable.astype(np.float64),
+        )
+        mask = turnovers > 0
+        ti = reb_idx[mask]
+        return self._build_result(
+            equity, gross, ti.tolist(), turnovers[mask].tolist(),
+            (turnovers[mask] * self.cost_rate * equity[ti]).tolist(),
+            equity[ti].tolist(), T, N,
+        )
+
+    def _run_py(self, rets: np.ndarray, tradable: np.ndarray) -> BacktestResult:
+        C = self.closes
+        T, N = C.shape
         equity = np.empty(T)
         equity[0] = self.initial_cash
         eq = self.initial_cash
-
-        w_active = np.zeros(N)  # weights currently held (start flat)
+        w_active = np.zeros(N)
         gross_exposure = np.zeros(T)
         per_bar_short_cost = self.short_cost_annual / self.bars_per_year
-        peak = eq  # running high-water mark, for the drawdown circuit-breaker
-
+        peak = eq
         reb_idx, reb_turn, reb_cost, reb_eq = [], [], [], []
 
         for t in range(1, T):
-            # Earn the return on the weights set at the previous bar: price move,
-            # any funding cashflow (a short in positive funding *receives* it,
-            # hence the minus sign), minus financing paid to hold shorts.
             price_ret = float(w_active @ rets[t])
             funding_ret = (
                 -float(w_active @ self.funding_event[t])
-                if self.funding_event is not None
-                else 0.0
+                if self.funding_event is not None else 0.0
             )
             short_ret = -float(np.abs(np.minimum(w_active, 0.0)).sum()) * per_bar_short_cost
-            port_ret = price_ret + funding_ret + short_ret
-            eq *= 1.0 + port_ret
+            eq *= 1.0 + price_ret + funding_ret + short_ret
             peak = max(peak, eq)
-            growth = 1.0 + price_ret  # weights drift with prices, not cashflows
-
-            # Drift the weights forward with realised returns, then force-exit any
-            # coin that is no longer tradable this bar (delisted -> to cash).
+            growth = 1.0 + price_ret
             if growth != 0.0:
                 w_drifted = w_active * (1.0 + rets[t]) / growth
             else:  # pragma: no cover - portfolio wiped out
                 w_drifted = w_active.copy()
             w_drifted = np.where(tradable[t], w_drifted, 0.0)
 
-            # Rebalance on schedule.
             if t % self.rebalance_every == 0:
-                ctx = PanelContext(
-                    t, C, self.symbols,
-                    funding=self.funding_prevailing, volumes=self.volumes,
-                    tvl=self.tvl,
-                )
-                scores = self.strategy.scores(ctx)
-                w_target = scores_to_weights(
-                    scores, leverage=self.leverage, top_k=self.top_k,
-                    neutralize=self.neutralize,
-                )
-                if self.min_short_dv is not None:
-                    w_target = self._apply_shortability(w_target, t)
-                if self.vol_target is not None:
-                    w_target = self._vol_scale(w_target, rets, t)
-                if self.capacity_aum is not None:
-                    w_target = self._apply_capacity(w_target, t)
+                w_target = self._target_weights(t, rets)
                 if self.dd_derisk_start is not None:
                     w_target = w_target * self._dd_scale(eq / peak - 1.0)
                 turnover = float(np.abs(w_target - w_drifted).sum())
@@ -196,12 +222,13 @@ class CrossSectionalBacktester:
             equity[t] = eq
             gross_exposure[t] = float(np.abs(w_active).sum())
 
+        return self._build_result(equity, gross_exposure, reb_idx, reb_turn,
+                                  reb_cost, reb_eq, T, N)
+
+    def _build_result(self, equity, gross, reb_idx, reb_turn, reb_cost, reb_eq,
+                      T, N) -> BacktestResult:
         equity_curve = pl.DataFrame(
-            {
-                "timestamp": self.timestamps,
-                "equity": equity,
-                "gross_exposure": gross_exposure,
-            }
+            {"timestamp": self.timestamps, "equity": equity, "gross_exposure": gross}
         )
         trades = pl.DataFrame(
             {
@@ -213,7 +240,6 @@ class CrossSectionalBacktester:
                 "equity": reb_eq,
             }
         )
-
         return BacktestResult(
             equity_curve=equity_curve,
             trades=trades,

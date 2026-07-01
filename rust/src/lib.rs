@@ -13,7 +13,7 @@ use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
 #[pyfunction]
-#[pyo3(signature = (rets, reb_indices, reb_weights, initial, cost_rate, short_cost_per_bar, funding=None))]
+#[pyo3(signature = (rets, reb_indices, reb_weights, initial, cost_rate, short_cost_per_bar, funding=None, tradable=None))]
 #[allow(clippy::too_many_arguments)]
 fn simulate<'py>(
     py: Python<'py>,
@@ -24,14 +24,21 @@ fn simulate<'py>(
     cost_rate: f64,
     short_cost_per_bar: f64,
     funding: Option<PyReadonlyArray2<'py, f64>>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    tradable: Option<PyReadonlyArray2<'py, f64>>,
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+)> {
     let rets = rets.as_array();
     let (t_len, n) = rets.dim();
     let reb_idx = reb_indices.as_array();
     let reb_w = reb_weights.as_array();
     let funding: Option<ArrayView2<f64>> = funding.as_ref().map(|f| f.as_array());
+    let tradable: Option<ArrayView2<f64>> = tradable.as_ref().map(|f| f.as_array());
 
     let mut equity = vec![0.0_f64; t_len];
+    let mut gross = vec![0.0_f64; t_len];
     let n_reb = reb_idx.len();
     let mut turnovers = vec![0.0_f64; n_reb];
 
@@ -76,6 +83,14 @@ fn simulate<'py>(
         } else {
             w_drifted.copy_from_slice(&w_active);
         }
+        if let Some(tr) = &tradable {
+            let trow = tr.row(t);
+            for i in 0..n {
+                if trow[i] <= 0.0 {
+                    w_drifted[i] = 0.0;
+                }
+            }
+        }
 
         if ptr < n_reb && reb_idx[ptr] as usize == t {
             let w_target = reb_w.row(ptr);
@@ -93,11 +108,17 @@ fn simulate<'py>(
             w_active.copy_from_slice(&w_drifted);
         }
         equity[t] = eq;
+        let mut g = 0.0;
+        for i in 0..n {
+            g += w_active[i].abs();
+        }
+        gross[t] = g;
     }
 
     Ok((
         equity.into_pyarray_bound(py),
         turnovers.into_pyarray_bound(py),
+        gross.into_pyarray_bound(py),
     ))
 }
 

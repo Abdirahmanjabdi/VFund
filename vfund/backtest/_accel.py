@@ -28,6 +28,7 @@ def rust_simulate(
     cost_rate: float = 0.0,
     short_cost_per_bar: float = 0.0,
     funding: np.ndarray | None = None,
+    tradable: np.ndarray | None = None,
 ):  # pragma: no cover - only runs when the extension is built
     """Call the Rust simulation core, marshalling arrays to the expected dtypes."""
     if vfund_core is None:
@@ -37,9 +38,11 @@ def rust_simulate(
     reb_weights = np.ascontiguousarray(reb_weights, dtype=np.float64)
     if funding is not None:
         funding = np.ascontiguousarray(funding, dtype=np.float64)
+    if tradable is not None:
+        tradable = np.ascontiguousarray(tradable, dtype=np.float64)
     return vfund_core.simulate(
         rets, reb_indices, reb_weights,
-        float(initial), float(cost_rate), float(short_cost_per_bar), funding,
+        float(initial), float(cost_rate), float(short_cost_per_bar), funding, tradable,
     )
 
 

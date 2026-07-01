@@ -25,7 +25,8 @@ def simulate_py(
     cost_rate: float = 0.0,
     short_cost_per_bar: float = 0.0,
     funding: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    tradable: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Reference simulation.
 
     Parameters
@@ -41,11 +42,15 @@ def simulate_py(
         Starting equity, turnover cost rate, per-bar financing on short notional.
     funding : (T, N) float array, optional
         Funding paid on each bar (a short in positive funding receives it).
+    tradable : (T, N) array, optional
+        1 where a coin is tradable that bar, 0 where not (delisted/pre-listing).
+        Non-tradable holdings are force-exited to cash on drift.
 
     Returns
     -------
     equity : (T,) float array
     turnovers : (R,) float array
+    gross_exposure : (T,) float array
     """
     rets = np.ascontiguousarray(rets, dtype=float)
     T, N = rets.shape
@@ -54,6 +59,7 @@ def simulate_py(
 
     equity = np.empty(T)
     equity[0] = initial
+    gross = np.zeros(T)
     turnovers = np.empty(reb_indices.size)
 
     w_active = np.zeros(N)
@@ -68,6 +74,8 @@ def simulate_py(
         eq *= 1.0 + price_ret + fund_ret + short_ret
         growth = 1.0 + price_ret
         w_drifted = w_active * (1.0 + r) / growth if growth != 0.0 else w_active.copy()
+        if tradable is not None:
+            w_drifted = np.where(tradable[t] > 0, w_drifted, 0.0)
 
         if ptr < reb_indices.size and reb_indices[ptr] == t:
             w_target = reb_weights[ptr]
@@ -79,8 +87,9 @@ def simulate_py(
         else:
             w_active = w_drifted
         equity[t] = eq
+        gross[t] = float(np.abs(w_active).sum())
 
-    return equity, turnovers
+    return equity, turnovers, gross
 
 
 def simulate(*args, **kwargs) -> tuple[np.ndarray, np.ndarray]:

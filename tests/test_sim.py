@@ -18,17 +18,18 @@ from vfund.strategy.cross_sectional import PanelContext
 def test_buy_and_hold_hand_computed():
     # Asset 0 returns +10%/bar from t=1; go fully long it at t=1.
     rets = np.array([[0.0, 0.0], [0.0, 0.0], [0.1, 0.0], [0.1, 0.0]])
-    eq, turn = simulate_py(rets, np.array([1]), np.array([[1.0, 0.0]]),
-                           initial=100.0, cost_rate=0.0)
+    eq, turn, gross = simulate_py(rets, np.array([1]), np.array([[1.0, 0.0]]),
+                                  initial=100.0, cost_rate=0.0)
     assert np.allclose(eq, [100.0, 100.0, 110.0, 121.0])
     assert np.allclose(turn, [1.0])
+    assert np.allclose(gross[1:], [1.0, 1.0, 1.0])
 
 
 def test_flat_book_is_constant():
     rng = np.random.default_rng(0)
     rets = rng.standard_normal((50, 4)) * 0.01
     rets[0] = 0
-    eq, _ = simulate_py(rets, np.array([1]), np.zeros((1, 4)), initial=1000.0)
+    eq, _, _ = simulate_py(rets, np.array([1]), np.zeros((1, 4)), initial=1000.0)
     assert np.allclose(eq, 1000.0)
 
 
@@ -51,8 +52,8 @@ def test_matches_full_engine():
             reb_idx.append(t)
             reb_w.append(scores_to_weights(strat.scores(ctx), leverage=1.0, neutralize=True))
 
-    eq, _ = simulate_py(rets, np.array(reb_idx), np.array(reb_w),
-                        initial=bt.initial_cash, cost_rate=10 / 10_000.0)
+    eq, _, _ = simulate_py(rets, np.array(reb_idx), np.array(reb_w),
+                           initial=bt.initial_cash, cost_rate=10 / 10_000.0)
     assert np.allclose(eq, res.equity_curve["equity"].to_numpy())
 
 
@@ -62,3 +63,29 @@ def test_dispatch_falls_back_to_python():
     a = simulate(rets, np.array([1]), np.ones((1, 3)) / 3, initial=100.0)
     b = simulate_py(rets, np.array([1]), np.ones((1, 3)) / 3, initial=100.0)
     assert np.allclose(a[0], b[0])
+
+
+def _rets_tradable(bt):
+    C = bt.closes
+    rets = np.zeros_like(C)
+    rets[1:] = C[1:] / C[:-1] - 1.0
+    rets = np.where(np.isfinite(rets), rets, 0.0)
+    return rets, np.isfinite(C)
+
+
+def test_fast_path_matches_python_loop():
+    # Exercises shortability + vol-target + capacity + short costs together.
+    panel = generate_gbm_panel(15, 500, reversion=0.2, seed=5)
+    bt = CrossSectionalBacktester(
+        panel, CrossSectionalReversal(2), rebalance_every=5, cost_bps=10, top_k=5,
+        interval="1d", vol_target=0.3, short_cost_bps_annual=1000,
+        min_short_dollar_volume=1000, capacity_aum=1e7,
+    )
+    rets, tradable = _rets_tradable(bt)
+    fast = bt._run_fast(rets, tradable)
+    slow = bt._run_py(rets, tradable)
+    assert np.allclose(fast.equity_curve["equity"].to_numpy(),
+                       slow.equity_curve["equity"].to_numpy())
+    assert np.allclose(fast.equity_curve["gross_exposure"].to_numpy(),
+                       slow.equity_curve["gross_exposure"].to_numpy())
+    assert fast.n_trades == slow.n_trades
