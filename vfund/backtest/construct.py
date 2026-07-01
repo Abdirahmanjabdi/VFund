@@ -20,8 +20,19 @@ def scores_to_weights(
     *,
     leverage: float = 1.0,
     top_k: int | None = None,
+    neutralize: bool = True,
 ) -> np.ndarray:
-    """Convert per-asset scores to dollar-neutral target weights."""
+    """Convert per-asset scores to target weights.
+
+    ``neutralize=True`` (default) builds a dollar-neutral long/short book by
+    demeaning the scores — the market move cancels and you're left with the
+    *relative* bet. That's right for cross-sectional signals.
+
+    ``neutralize=False`` keeps the raw scores, so the book can be net long or
+    short. That's right for *time-series* signals (e.g. per-asset trend), where
+    being long everything in an uptrend is the whole point — but note it then
+    carries market exposure, so judge it against buy-and-hold, not zero.
+    """
     s = np.asarray(scores, dtype=float)
     w = np.zeros_like(s)
     valid = ~np.isnan(s)
@@ -31,14 +42,16 @@ def scores_to_weights(
 
     sv = s[valid]
 
-    if top_k is not None and top_k > 0 and 2 * top_k <= n_valid:
+    if neutralize and top_k is not None and top_k > 0 and 2 * top_k <= n_valid:
         # Long the top_k highest scores, short the top_k lowest — equal weight.
         order = np.argsort(sv)
         book = np.zeros_like(sv)
         book[order[-top_k:]] = 1.0
         book[order[:top_k]] = -1.0
-    else:
+    elif neutralize:
         book = sv - sv.mean()  # demean -> dollar neutral
+    else:
+        book = sv.copy()  # directional: keep net exposure
 
     gross = np.abs(book).sum()
     if gross > 0:

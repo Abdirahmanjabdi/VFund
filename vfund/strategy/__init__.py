@@ -13,6 +13,9 @@ from vfund.strategy.cross_sectional import (
     CrossSectionalStrategy,
     CrossSectionalReversal,
     CrossSectionalMomentum,
+    CrossSectionalLowVol,
+    CrossSectionalValue,
+    TimeSeriesTrend,
     FundingCarry,
     PanelContext,
 )
@@ -25,6 +28,9 @@ __all__ = [
     "CrossSectionalStrategy",
     "CrossSectionalReversal",
     "CrossSectionalMomentum",
+    "CrossSectionalLowVol",
+    "CrossSectionalValue",
+    "TimeSeriesTrend",
     "FundingCarry",
     "PanelContext",
 ]

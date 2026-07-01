@@ -28,3 +28,12 @@ def test_nan_assets_are_excluded():
 
 def test_insufficient_names_returns_flat():
     assert np.all(scores_to_weights(np.array([np.nan, 1.0])) == 0.0)
+
+
+def test_non_neutral_keeps_net_exposure():
+    w = scores_to_weights(np.array([1.0, 2.0, 3.0]), neutralize=False)
+    assert abs(np.abs(w).sum() - 1.0) < 1e-12  # gross scaled to leverage
+    assert w.sum() > 0.9                        # net long (not demeaned)
+    # Neutral mode on the same scores is dollar-neutral.
+    wn = scores_to_weights(np.array([1.0, 2.0, 3.0]), neutralize=True)
+    assert abs(wn.sum()) < 1e-12

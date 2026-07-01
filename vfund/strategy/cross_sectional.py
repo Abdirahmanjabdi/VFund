@@ -122,3 +122,70 @@ class FundingCarry(CrossSectionalStrategy):
             )
         window = funding[-self.smooth :]
         return -window.mean(axis=0)  # short high funding, long low/negative
+
+
+class CrossSectionalLowVol(CrossSectionalStrategy):
+    """Betting-against-beta: long the calm coins, short the wild ones.
+
+    Across many markets, low-volatility assets have delivered better
+    *risk-adjusted* returns than high-vol ones (investors overpay for lottery-like
+    upside). Score = minus trailing volatility.
+    """
+
+    def __init__(self, lookback: int = 168):
+        if lookback < 5:
+            raise ValueError("lookback too small to estimate volatility")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        if closes.shape[0] <= self.lookback + 1:
+            return np.full(closes.shape[1], np.nan)
+        window = closes[-self.lookback - 1 :]
+        rets = window[1:] / window[:-1] - 1.0
+        return -rets.std(axis=0)  # long low vol, short high vol
+
+
+class CrossSectionalValue(CrossSectionalStrategy):
+    """Medium-horizon mean reversion — a crude 'value' proxy.
+
+    Price stretched far above its own long moving average is 'rich'; far below is
+    'cheap'. Long the cheap, short the rich, and bet on convergence. Score =
+    minus the distance from the moving average.
+    """
+
+    def __init__(self, lookback: int = 720):  # ~30 days of hourly bars
+        if lookback < 2:
+            raise ValueError("lookback must be >= 2")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        if closes.shape[0] <= self.lookback:
+            return np.full(closes.shape[1], np.nan)
+        ma = closes[-self.lookback :].mean(axis=0)
+        distance = closes[-1] / ma - 1.0
+        return -distance  # long below-MA (cheap), short above-MA (rich)
+
+
+class TimeSeriesTrend(CrossSectionalStrategy):
+    """Per-asset trend following (time-series momentum).
+
+    For each coin independently: long if its trailing return is positive, short
+    if negative. Unlike the cross-sectional strategies this is *directional* —
+    long everything in a broad uptrend — so run it with ``neutralize=False`` and
+    judge it against buy-and-hold, since it carries market exposure. Trend is one
+    of the most robust anomalies across asset classes and time.
+    """
+
+    def __init__(self, lookback: int = 168):
+        if lookback < 1:
+            raise ValueError("lookback must be >= 1")
+        self.lookback = lookback
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        closes = ctx.closes
+        if closes.shape[0] <= self.lookback:
+            return np.full(closes.shape[1], np.nan)
+        trailing = closes[-1] / closes[-1 - self.lookback] - 1.0
+        return np.sign(trailing)  # +1 uptrend (long), -1 downtrend (short)

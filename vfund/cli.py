@@ -86,16 +86,22 @@ def cmd_backtest(args) -> int:
 
 def _build_xs_strategy(hypothesis: str, param: int):
     from vfund.strategy import (
+        CrossSectionalLowVol,
         CrossSectionalMomentum,
         CrossSectionalReversal,
+        CrossSectionalValue,
         FundingCarry,
+        TimeSeriesTrend,
     )
 
-    if hypothesis == "momentum":
-        return CrossSectionalMomentum(param)
-    if hypothesis == "carry":
-        return FundingCarry(smooth=param)
-    return CrossSectionalReversal(param)
+    return {
+        "reversal": lambda p: CrossSectionalReversal(p),
+        "momentum": lambda p: CrossSectionalMomentum(p),
+        "lowvol": lambda p: CrossSectionalLowVol(p),
+        "value": lambda p: CrossSectionalValue(p),
+        "trend": lambda p: TimeSeriesTrend(p),
+        "carry": lambda p: FundingCarry(smooth=p),
+    }[hypothesis](param)
 
 
 def cmd_fetch_universe(args) -> int:
@@ -137,6 +143,7 @@ def cmd_research(args) -> int:
         rebalance_every=args.rebalance_every,
         leverage=args.leverage,
         top_k=args.top_k,
+        neutralize=not (args.directional or args.hypothesis == "trend"),
         cost_bps=args.cost_bps,
         interval=args.interval,
     )
@@ -201,12 +208,18 @@ def cmd_research(args) -> int:
 
 
 def _add_xs_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--hypothesis", choices=["reversal", "momentum", "carry"], default="reversal")
+    p.add_argument(
+        "--hypothesis",
+        choices=["reversal", "momentum", "lowvol", "value", "trend", "carry"],
+        default="reversal",
+    )
     p.add_argument("--interval", default="1h")
     p.add_argument("--lookback", type=int, default=1, help="signal lookback/smooth (single run)")
     p.add_argument("--rebalance-every", type=int, default=1)
     p.add_argument("--leverage", type=float, default=1.0)
     p.add_argument("--top-k", type=int, default=None, help="trade only k names per side")
+    p.add_argument("--directional", action="store_true",
+                   help="net long/short book (auto for trend); else dollar-neutral")
     p.add_argument("--cost-bps", type=float, default=10.0)
     p.add_argument("--plot", metavar="PNG", help="save an equity/drawdown chart")
 

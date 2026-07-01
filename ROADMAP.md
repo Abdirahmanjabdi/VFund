@@ -37,6 +37,13 @@ not backtest returns, decide whether an edge is real.
   Probabilistic & Deflated Sharpe. It **rejected** the funding-carry candidate
   (positive in only ~35% of coin subsets; Deflated Sharpe ~15%). Working exactly
   as intended — it killed a false positive that walk-forward alone had flattered.
+- ✅ Hypothesis library + gauntlet: cross-sectional momentum, low-vol,
+  value (MA-distance), and directional time-series trend, each run through
+  walk-forward + robustness (`examples/hypothesis_gauntlet.py`). On 2023-24 data
+  no *market-neutral* edge passed; time-series trend "passed" only because it
+  rode market beta (Sharpe 1.66 vs 1.33 buy-and-hold) — needs a bear-market
+  sample and beta-adjustment to judge as alpha.
+- Bear-market data (e.g. 2022) + beta-adjusted (alpha vs buy-and-hold) evaluation
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

@@ -35,6 +35,7 @@ class CrossSectionalBacktester:
         rebalance_every: int = 1,
         leverage: float = 1.0,
         top_k: int | None = None,
+        neutralize: bool = True,
         cost_bps: float = 10.0,
         interval: str = "1h",
         initial_cash: float = 10_000.0,
@@ -59,6 +60,7 @@ class CrossSectionalBacktester:
         self.rebalance_every = max(1, int(rebalance_every))
         self.leverage = leverage
         self.top_k = top_k
+        self.neutralize = neutralize
         self.cost_rate = cost_bps / 10_000.0
         self.interval = interval
         self.bars_per_year = _bars_per_year(interval)
@@ -109,7 +111,8 @@ class CrossSectionalBacktester:
                 ctx = PanelContext(t, C, self.symbols, funding=self.funding_prevailing)
                 scores = self.strategy.scores(ctx)
                 w_target = scores_to_weights(
-                    scores, leverage=self.leverage, top_k=self.top_k
+                    scores, leverage=self.leverage, top_k=self.top_k,
+                    neutralize=self.neutralize,
                 )
                 turnover = float(np.abs(w_target - w_drifted).sum())
                 cost = turnover * self.cost_rate
