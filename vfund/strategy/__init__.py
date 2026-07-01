@@ -9,5 +9,20 @@ the rest (rebalancing, costs, accounting). This keeps strategy code about the
 from vfund.strategy.base import Strategy, BarContext
 from vfund.strategy.ma_crossover import MACrossover
 from vfund.strategy.buy_and_hold import BuyAndHold
+from vfund.strategy.cross_sectional import (
+    CrossSectionalStrategy,
+    CrossSectionalReversal,
+    CrossSectionalMomentum,
+    PanelContext,
+)
 
-__all__ = ["Strategy", "BarContext", "MACrossover", "BuyAndHold"]
+__all__ = [
+    "Strategy",
+    "BarContext",
+    "MACrossover",
+    "BuyAndHold",
+    "CrossSectionalStrategy",
+    "CrossSectionalReversal",
+    "CrossSectionalMomentum",
+    "PanelContext",
+]

@@ -107,13 +107,55 @@ class Momentum(Strategy):
 flat, `-1.0` = fully short). The engine handles rebalancing, slippage,
 commission, and accounting.
 
+## Cross-sectional research (v0.1)
+
+Real crypto edge is usually *relative* — how coins move against each other — and
+only counts if it survives out-of-sample and after costs. VFund tests exactly
+that.
+
+```bash
+# Offline: does a short-term reversal signal survive out-of-sample?
+# (synthetic data with a real reversal effect baked in, so you can see the
+#  machine detect genuine edge — and watch costs destroy it)
+vfund research --demo --walkforward --hypothesis reversal \
+    --grid 1 2 3 6 --train-size 2000 --test-size 800 --cost-bps 0    # signal is real
+vfund research --demo --walkforward --hypothesis reversal \
+    --grid 1 2 3 6 --train-size 2000 --test-size 800 --cost-bps 10   # costs kill it
+
+# On real data: pull a 30-coin universe, then research it
+vfund fetch-universe --top 30 --interval 1h --start 2023-01-01 --out data/uni.parquet
+vfund research --data data/uni.parquet --walkforward --hypothesis reversal
+```
+
+The walk-forward report prints the **overfitting gap** (in-sample minus
+out-of-sample) — the number that tells you whether you found an edge or just fit
+noise.
+
+```python
+from vfund.data.synthetic import generate_gbm_panel
+from vfund.research import walk_forward
+from vfund.strategy import CrossSectionalReversal
+
+panel = generate_gbm_panel(20, 6000, reversion=0.15, seed=1)
+wf = walk_forward(
+    panel,
+    lambda lookback: CrossSectionalReversal(lookback),
+    [{"lookback": lb} for lb in (1, 2, 3, 6)],
+    train_size=2000, test_size=800, backtest_kwargs={"cost_bps": 10},
+)
+print(wf.summary())
+```
+
 ## Architecture
 
 ```
 vfund/
-├── data/        # canonical OHLCV schema, Binance ingest, Parquet storage, synthetic GBM
-├── strategy/    # the Strategy interface + baselines (MA crossover, buy & hold)
-├── backtest/    # event-driven engine, simulated broker (costs), portfolio, result
+├── data/        # OHLCV + multi-asset panel schema, Binance/universe/funding ingest,
+│                #   Parquet storage, synthetic GBM (single & panel)
+├── strategy/    # single-asset Strategy + cross-sectional (reversal, momentum) strategies
+├── backtest/    # event-driven engine, cross-sectional L/S engine, broker (costs),
+│                #   portfolio, portfolio construction, result
+├── research/    # time-series splits + walk-forward out-of-sample validation
 └── analytics/   # Sharpe/Sortino/drawdown/CAGR, text reports, equity charts
 ```
 

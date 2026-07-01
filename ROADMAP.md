@@ -16,13 +16,25 @@ Data → backtest → report, end to end, on free crypto data.
 **Teaches:** data engineering, market microstructure basics, and the single most
 important quant skill — *not fooling yourself*.
 
-## v0.1 — research ergonomics
-- Parameter sweeps + walk-forward / out-of-sample splits
-- Vectorised indicator library (MA, RSI, ATR, z-score, …)
-- Benchmark comparison (every strategy vs. buy-and-hold) baked into reports
-- Notebook examples
+## v0.1 — cross-sectional research + out-of-sample validation ✅ (this release)
+- Multi-asset **panel** data model, storage, and Binance universe ingest
+- Perp **funding-rate** ingest (for the funding-carry hypothesis)
+- **Cross-sectional long/short engine**: dollar-neutral books, turnover-based
+  costs, weight drift between rebalances
+- Portfolio construction split from signal (`scores_to_weights`)
+- First hypotheses: **cross-sectional reversal** and momentum
+- **Walk-forward** optimisation: pick params in-sample, judge out-of-sample,
+  and report the overfitting gap
+- `vfund fetch-universe` and `vfund research [--walkforward]` CLI
 
-**Teaches:** the quant-researcher workflow; overfitting and how to resist it.
+**Teaches:** the quant-researcher workflow; that costs and out-of-sample decay,
+not backtest returns, decide whether an edge is real.
+
+### v0.1.x — still to come
+- Vectorised indicator library (RSI, ATR, z-score, …)
+- Funding-carry strategy wired end to end
+- Deflated Sharpe / multiple-testing corrections
+- Notebook examples
 
 ## v0.2 — portfolio & risk
 - Multi-asset portfolios and rebalancing
