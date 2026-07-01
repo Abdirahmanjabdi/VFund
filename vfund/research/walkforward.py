@@ -81,8 +81,13 @@ def walk_forward(
     metric: str = "sharpe",
     interval: str = "1h",
     backtest_kwargs: dict | None = None,
+    funding: pl.DataFrame | None = None,
 ) -> WalkForwardResult:
-    """Run a walk-forward study of ``build_strategy`` over ``param_grid``."""
+    """Run a walk-forward study of ``build_strategy`` over ``param_grid``.
+
+    Pass ``funding`` to validate a funding-carry hypothesis; it is sliced to each
+    window alongside the price panel.
+    """
     if not param_grid:
         raise ValueError("param_grid is empty")
     panel = validate_panel(panel)
@@ -97,9 +102,11 @@ def walk_forward(
             f"train_size={train_size} + test_size={test_size}"
         )
 
-    def run(sub_panel, params) -> tuple[float, object]:
+    def run(sub_panel, sub_funding, params) -> tuple[float, object]:
         strat = build_strategy(**params)
-        res = CrossSectionalBacktester(sub_panel, strat, **bt_kwargs).run()
+        res = CrossSectionalBacktester(
+            sub_panel, strat, funding=sub_funding, **bt_kwargs
+        ).run()
         return res.metrics()[metric], res
 
     rows: list[dict] = []
@@ -111,16 +118,21 @@ def walk_forward(
         test_ts = ts_master.slice(test.start, len(test))
         train_panel = panel.filter(pl.col("timestamp").is_in(train_ts.implode()))
         test_panel = panel.filter(pl.col("timestamp").is_in(test_ts.implode()))
+        if funding is not None:
+            train_fund = funding.filter(pl.col("timestamp").is_in(train_ts.implode()))
+            test_fund = funding.filter(pl.col("timestamp").is_in(test_ts.implode()))
+        else:
+            train_fund = test_fund = None
 
         # Pick the parameter set that does best in-sample.
         best_score, best_params = -np.inf, param_grid[0]
         for params in param_grid:
-            score, _ = run(train_panel, params)
+            score, _ = run(train_panel, train_fund, params)
             if score > best_score:
                 best_score, best_params = score, params
 
         # Judge it out-of-sample.
-        test_score, test_res = run(test_panel, best_params)
+        test_score, test_res = run(test_panel, test_fund, best_params)
 
         row = {"window": wi}
         row.update({f"param_{k}": v for k, v in best_params.items()})

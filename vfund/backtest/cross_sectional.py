@@ -22,7 +22,7 @@ import polars as pl
 from vfund.backtest.construct import scores_to_weights
 from vfund.backtest.result import BacktestResult
 from vfund.data.intervals import bars_per_year as _bars_per_year
-from vfund.data.panel import pivot_to_wide, validate_panel
+from vfund.data.panel import align_funding, pivot_to_wide, validate_panel
 from vfund.strategy.cross_sectional import CrossSectionalStrategy, PanelContext
 
 
@@ -38,12 +38,22 @@ class CrossSectionalBacktester:
         cost_bps: float = 10.0,
         interval: str = "1h",
         initial_cash: float = 10_000.0,
+        funding: pl.DataFrame | None = None,
     ):
         panel = validate_panel(panel)
         wide = pivot_to_wide(panel, "close")
         self.timestamps = wide["timestamp"]
         self.symbols = [c for c in wide.columns if c != "timestamp"]
         self.closes = wide.select(self.symbols).to_numpy()  # (T, N)
+
+        # Optional funding overlay: `event` pays into P&L on funding bars,
+        # `prevailing` is the forward-filled rate the strategy trades on.
+        if funding is not None:
+            self.funding_event, self.funding_prevailing = align_funding(
+                funding, self.timestamps, self.symbols
+            )
+        else:
+            self.funding_event = self.funding_prevailing = None
 
         self.strategy = strategy
         self.rebalance_every = max(1, int(rebalance_every))
@@ -74,10 +84,19 @@ class CrossSectionalBacktester:
         reb_idx, reb_turn, reb_cost, reb_eq = [], [], [], []
 
         for t in range(1, T):
-            # Earn the return on the weights set at the previous bar.
-            port_ret = float(w_active @ rets[t])
+            # Earn the return on the weights set at the previous bar: price move
+            # plus, if this bar pays funding, the funding cashflow. A short
+            # position (w<0) in a positive-funding perp *receives* funding, hence
+            # the minus sign.
+            price_ret = float(w_active @ rets[t])
+            funding_ret = (
+                -float(w_active @ self.funding_event[t])
+                if self.funding_event is not None
+                else 0.0
+            )
+            port_ret = price_ret + funding_ret
             eq *= 1.0 + port_ret
-            growth = 1.0 + port_ret
+            growth = 1.0 + price_ret  # weights drift with prices, not cashflows
 
             # Drift the weights forward with realised returns.
             if growth != 0.0:
@@ -87,7 +106,7 @@ class CrossSectionalBacktester:
 
             # Rebalance on schedule.
             if t % self.rebalance_every == 0:
-                ctx = PanelContext(t, C, self.symbols)
+                ctx = PanelContext(t, C, self.symbols, funding=self.funding_prevailing)
                 scores = self.strategy.scores(ctx)
                 w_target = scores_to_weights(
                     scores, leverage=self.leverage, top_k=self.top_k

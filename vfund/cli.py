@@ -84,12 +84,18 @@ def cmd_backtest(args) -> int:
     return 0
 
 
-def _build_xs_strategy(hypothesis: str, lookback: int):
-    from vfund.strategy import CrossSectionalMomentum, CrossSectionalReversal
+def _build_xs_strategy(hypothesis: str, param: int):
+    from vfund.strategy import (
+        CrossSectionalMomentum,
+        CrossSectionalReversal,
+        FundingCarry,
+    )
 
     if hypothesis == "momentum":
-        return CrossSectionalMomentum(lookback)
-    return CrossSectionalReversal(lookback)
+        return CrossSectionalMomentum(param)
+    if hypothesis == "carry":
+        return FundingCarry(smooth=param)
+    return CrossSectionalReversal(param)
 
 
 def cmd_fetch_universe(args) -> int:
@@ -109,6 +115,23 @@ def cmd_fetch_universe(args) -> int:
     return 0
 
 
+def cmd_fetch_funding(args) -> int:
+    from vfund.data.panel import save_funding
+    from vfund.data.universe import DEFAULT_UNIVERSE, fetch_funding_universe, top_symbols_by_volume
+
+    if args.top:
+        symbols = top_symbols_by_volume(args.top)
+    elif args.symbols:
+        symbols = args.symbols
+    else:
+        symbols = DEFAULT_UNIVERSE
+    print(f"fetching funding for {len(symbols)} symbols ...")
+    funding = fetch_funding_universe(symbols, start=args.start, end=args.end)
+    out = save_funding(funding, args.out)
+    print(f"saved funding ({funding.height:,} rows, {funding['symbol'].n_unique()} symbols) -> {out}")
+    return 0
+
+
 def cmd_research(args) -> int:
     bt_kwargs = dict(
         rebalance_every=args.rebalance_every,
@@ -119,6 +142,8 @@ def cmd_research(args) -> int:
     )
 
     if args.demo:
+        if args.hypothesis == "carry":
+            raise ValueError("carry needs real funding data; use --data + --funding")
         from vfund.data.synthetic import generate_gbm_panel
 
         panel = generate_gbm_panel(
@@ -134,6 +159,14 @@ def cmd_research(args) -> int:
 
         panel = load_panel(args.data)
 
+    funding = None
+    if args.funding:
+        from vfund.data.panel import load_funding
+
+        funding = load_funding(args.funding)
+    elif args.hypothesis == "carry":
+        raise ValueError("carry hypothesis requires --funding <panel.parquet>")
+
     if args.walkforward:
         from vfund.research import walk_forward
 
@@ -146,6 +179,7 @@ def cmd_research(args) -> int:
             test_size=args.test_size,
             interval=args.interval,
             backtest_kwargs=bt_kwargs,
+            funding=funding,
         )
         import polars as pl
 
@@ -157,7 +191,7 @@ def cmd_research(args) -> int:
         from vfund.backtest.cross_sectional import CrossSectionalBacktester
 
         strat = _build_xs_strategy(args.hypothesis, args.lookback)
-        res = CrossSectionalBacktester(panel, strat, **bt_kwargs).run()
+        res = CrossSectionalBacktester(panel, strat, funding=funding, **bt_kwargs).run()
         print(res.summary())
         if getattr(args, "plot", None):
             from vfund.analytics.plot import plot_equity
@@ -167,9 +201,9 @@ def cmd_research(args) -> int:
 
 
 def _add_xs_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--hypothesis", choices=["reversal", "momentum"], default="reversal")
+    p.add_argument("--hypothesis", choices=["reversal", "momentum", "carry"], default="reversal")
     p.add_argument("--interval", default="1h")
-    p.add_argument("--lookback", type=int, default=1, help="signal lookback (single run)")
+    p.add_argument("--lookback", type=int, default=1, help="signal lookback/smooth (single run)")
     p.add_argument("--rebalance-every", type=int, default=1)
     p.add_argument("--leverage", type=float, default=1.0)
     p.add_argument("--top-k", type=int, default=None, help="trade only k names per side")
@@ -216,11 +250,21 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--out", required=True, help="output panel .parquet path")
     u.set_defaults(func=cmd_fetch_universe)
 
+    # fetch-funding
+    fu = sub.add_parser("fetch-funding", help="download perp funding-rate history")
+    fu.add_argument("--symbols", nargs="+", help="explicit symbol list")
+    fu.add_argument("--top", type=int, default=0, help="instead: top N by 24h volume")
+    fu.add_argument("--start", required=True, help="ISO date")
+    fu.add_argument("--end", default=None)
+    fu.add_argument("--out", required=True, help="output funding .parquet path")
+    fu.set_defaults(func=cmd_fetch_funding)
+
     # research — cross-sectional long/short, with optional walk-forward
     r = sub.add_parser("research", help="cross-sectional long/short research")
     src = r.add_mutually_exclusive_group(required=True)
     src.add_argument("--data", help="input panel .parquet path")
     src.add_argument("--demo", action="store_true", help="use an offline synthetic panel")
+    r.add_argument("--funding", help="funding panel .parquet (required for --hypothesis carry)")
     _add_xs_args(r)
     # walk-forward
     r.add_argument("--walkforward", action="store_true", help="run out-of-sample validation")

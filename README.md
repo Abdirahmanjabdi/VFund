@@ -125,7 +125,21 @@ vfund research --demo --walkforward --hypothesis reversal \
 # On real data: pull a 30-coin universe, then research it
 vfund fetch-universe --top 30 --interval 1h --start 2023-01-01 --out data/uni.parquet
 vfund research --data data/uni.parquet --walkforward --hypothesis reversal
+
+# Funding carry: harvest the perp funding spread (a low-turnover, cost-surviving edge)
+vfund fetch-funding --start 2023-06-01 --end 2024-06-01 --out data/funding.parquet
+vfund research --data data/uni.parquet --funding data/funding.parquet --walkforward \
+    --hypothesis carry --rebalance-every 24 --top-k 5 --cost-bps 5
 ```
+
+Two hypotheses ship in v0.1, and they teach opposite lessons:
+
+* **Short-term reversal** — a real signal, but so fast it dies below ~1 bp of
+  cost. A cautionary tale about the backtest-to-reality gap.
+* **Funding carry** — lower-turnover and structural; in the 2023-24 / 30-coin
+  run it survived realistic costs (OOS Sharpe ~1.0 at 5 bp) when concentrated in
+  the funding *extremes* and rebalanced daily. See
+  [`examples/funding_carry_study.py`](examples/funding_carry_study.py).
 
 The walk-forward report prints the **overfitting gap** (in-sample minus
 out-of-sample) — the number that tells you whether you found an edge or just fit

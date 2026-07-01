@@ -30,10 +30,13 @@ important quant skill — *not fooling yourself*.
 **Teaches:** the quant-researcher workflow; that costs and out-of-sample decay,
 not backtest returns, decide whether an edge is real.
 
-### v0.1.x — still to come
+### v0.1.x — funding carry ✅ / still to come
+- ✅ Funding-rate ingest + funding-aware P&L in the cross-sectional engine
+- ✅ Funding-carry strategy wired end to end (`vfund research --hypothesis carry`)
+  — a candidate cost-surviving edge in the extremes (see `examples/funding_carry_study.py`)
 - Vectorised indicator library (RSI, ATR, z-score, …)
-- Funding-carry strategy wired end to end
-- Deflated Sharpe / multiple-testing corrections
+- Deflated Sharpe / multiple-testing corrections (needed to confirm carry)
+- Robustness harness: multiple periods & universes
 - Notebook examples
 
 ## v0.2 — portfolio & risk

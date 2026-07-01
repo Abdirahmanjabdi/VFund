@@ -30,16 +30,30 @@ class PanelContext:
     so, as in the single-asset engine, the future is simply not in scope.
     """
 
-    __slots__ = ("i", "_closes", "symbols")
+    __slots__ = ("i", "_closes", "symbols", "_funding")
 
-    def __init__(self, i: int, closes: np.ndarray, symbols: list[str]):
+    def __init__(
+        self,
+        i: int,
+        closes: np.ndarray,
+        symbols: list[str],
+        funding: np.ndarray | None = None,
+    ):
         self.i = i
         self._closes = closes
         self.symbols = symbols
+        self._funding = funding
 
     @property
     def closes(self) -> np.ndarray:
         return self._closes[: self.i + 1]
+
+    @property
+    def funding(self) -> np.ndarray | None:
+        """Prevailing (forward-filled) funding rates up to now, or None."""
+        if self._funding is None:
+            return None
+        return self._funding[: self.i + 1]
 
     @property
     def n_seen(self) -> int:
@@ -79,3 +93,32 @@ class CrossSectionalMomentum(CrossSectionalStrategy):
             return np.full(closes.shape[1], np.nan)
         past_return = closes[-1] / closes[-1 - self.lookback] - 1.0
         return past_return  # long the winners, short the losers
+
+
+class FundingCarry(CrossSectionalStrategy):
+    """Harvest the perpetual funding spread.
+
+    Score = minus the prevailing funding rate (optionally smoothed over the last
+    ``smooth`` bars). High positive funding -> low score -> short it (you collect
+    the funding the crowded longs pay); negative funding -> long it. The book is
+    dollar-neutral, so it's the *funding differential* you earn, largely
+    independent of where the market goes.
+
+    Needs a funding-aware backtest (``CrossSectionalBacktester(..., funding=...)``)
+    so the funding cashflow actually shows up in P&L.
+    """
+
+    def __init__(self, smooth: int = 1):
+        if smooth < 1:
+            raise ValueError("smooth must be >= 1")
+        self.smooth = smooth
+
+    def scores(self, ctx: PanelContext) -> np.ndarray:
+        funding = ctx.funding
+        if funding is None:
+            raise ValueError(
+                "FundingCarry needs a funding-aware backtest — pass funding=... "
+                "to CrossSectionalBacktester"
+            )
+        window = funding[-self.smooth :]
+        return -window.mean(axis=0)  # short high funding, long low/negative
