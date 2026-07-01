@@ -75,11 +75,20 @@ not backtest returns, decide whether an edge is real.
   a broad 39-coin universe it falls to ~0.9; short costs shave another ~0.2. But
   the broad universe held up out-of-sample (OOS Sharpe ~0.46 after short costs)
   where the narrow one went negative — modest, consistent, more believable.
-- **Still not fully fixed:** "top by current volume" is itself current-winner
-  biased and excludes truly dead coins — a clean fix needs point-in-time
-  constituent data. Treat the broad-universe OOS as encouraging, not confirmed.
-- Where next: point-in-time universe; maker-fill modelling; more OOS as it
-  accrues; forward paper-trade any candidate.
+- ✅ **Point-in-time / delisted coins (the real survivorship fix).** Binance's
+  public klines still serve delisted symbols (series ends at delisting), and the
+  ragged engine consumes that natively. `KNOWN_DELISTED` (41 curated dead USDT
+  pairs: SRM, TORN, WAVES, ANT, OMG, WRX, …) feeds a survivorship-corrected
+  universe. **Finding:** on the narrow survivor universe, adding dead coins
+  slashed in-sample Sharpe 1.30→0.87 and OOS to −1.46 (the survivor result was
+  badly inflated). On the broad universe it held up — broad+dead (80 coins,
+  10%/yr shorts): full 0.86, IS 1.00, **OOS 0.46** — positive in both periods,
+  the most credible number yet.
+- **Remaining caveat:** shorting microcaps into delisting is often impossible
+  (no borrow); the flat short-cost model makes those short profits optimistic.
+  Also "top by volume" retains current-winner bias, and the OOS window has been
+  looked at repeatedly. Next: model no-borrow/hard-to-short; maker fills;
+  forward paper-trade; expand the delisted set.
 - Vectorised indicator library (RSI, ATR, z-score, …)
 - Cleaner carry model (perp prices / true delta-neutral basis) before any retest
 - Notebook examples

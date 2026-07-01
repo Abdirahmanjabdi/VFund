@@ -65,19 +65,28 @@ def row(label, panel, short_cost):
           f"{sharpe_ratio(r[oos],PPY):>8.2f} {(np.prod(1+r[oos])-1)*100:>7.0f}%")
 
 
-print(f"{'universe / shorting':>34} | {'full':>6} {'IS':>7} {'OOS':>8} {'OOSret':>8}")
-print("-" * 70)
+print(f"{'universe / shorting':>36} | {'full':>6} {'IS':>7} {'OOS':>8} {'OOSret':>8}")
+print("-" * 72)
 surv = load_panel("data/uni_2026.parquet")
-row("survivor(22), free shorts", surv, 0)
 row("survivor(22), 10%/yr shorts", surv, 1000)
+
+# Survivorship-corrected: add the coins that actually DIED (data ends at delist).
+try:
+    dead = load_panel("data/delisted.parquet")
+    pit_surv = pl.concat([surv, dead])
+    row(f"survivor+dead({pit_surv['symbol'].n_unique()}), 10%/yr", pit_surv, 1000)
+except FileNotFoundError:
+    print("  (data/delisted.parquet not found)")
+
 try:
     broad = clean_universe(load_panel("data/uni_broad.parquet"))
-    n_syms = broad["symbol"].n_unique()
-    row(f"broad({n_syms}), free shorts", broad, 0)
-    row(f"broad({n_syms}), 10%/yr shorts", broad, 1000)
+    row(f"broad({broad['symbol'].n_unique()}), 10%/yr shorts", broad, 1000)
+    dead = load_panel("data/delisted.parquet")
+    pit_broad = pl.concat([broad, dead])
+    row(f"broad+dead({pit_broad['symbol'].n_unique()}), 10%/yr", pit_broad, 1000)
 except FileNotFoundError:
-    print("  (data/uni_broad.parquet not found - fetch it to compare)")
+    print("  (broad/delisted parquet not found - fetch to compare)")
 
-print("\nEach honesty adjustment (broader universe, real short costs) should pull")
-print("the edge DOWN. What's left after all of them - especially OOS - is the")
-print("only part worth believing.")
+print("\nAdding the coins that DIED is the real survivorship fix. If in-sample")
+print("drops toward out-of-sample, the earlier IS was survivorship inflation.")
+print("The bottom rows are the most honest numbers we can produce for free.")

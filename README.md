@@ -186,13 +186,15 @@ vfund paper --data data/uni_daily.parquet --state data/paper.json --start-equity
 The combined book passed *in-sample* robustness. That is **not** proof it makes
 money live. Honest caveats, in order of severity:
 
-1. **Survivorship bias (partially addressed).** The engine is now ragged (coins
-   enter/exit as listed/delisted) and can run a broad auto-fetched universe, and
-   short-financing costs are modelled. This *revealed* the bias: the hand-picked
-   survivor universe's in-sample Sharpe (1.51) drops to ~0.9 on a broad 39-coin
-   universe. But "top by volume" still excludes truly dead coins (LUNA, FTT, …),
-   so a clean fix needs point-in-time constituent data. See
-   [`examples/survivorship_check.py`](examples/survivorship_check.py).
+1. **Survivorship bias (addressed, not perfect).** The engine is ragged (coins
+   enter/exit as listed/delisted), short costs are modelled, and — crucially —
+   Binance still serves *delisted* coins' candles, so `KNOWN_DELISTED` feeds a
+   survivorship-corrected universe of coins that actually died. This *revealed*
+   the bias: on the hand-picked survivor universe, adding dead coins cut
+   in-sample Sharpe 1.30→0.87 and pushed OOS to −1.46. The broader universe held
+   up (broad+dead, with short costs: IS 1.00 / OOS 0.46). Residual gap: shorting
+   coins into delisting is often impossible, so those short profits are
+   optimistic. See [`examples/survivorship_check.py`](examples/survivorship_check.py).
 2. **One bear cycle (n=1).** The crisis-alpha rests on a single 2022 crash.
 3. **Multiple testing.** The Deflated Sharpe adjusts for configs in one script,
    not the whole research search — true significance is lower.
