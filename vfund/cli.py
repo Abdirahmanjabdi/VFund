@@ -121,6 +121,18 @@ def cmd_fetch_universe(args) -> int:
     return 0
 
 
+def cmd_fetch_tvl(args) -> int:
+    from vfund.data.onchain import fetch_tvl_panel, save_tvl
+    from vfund.data.universe import DEFI_UNIVERSE
+
+    symbols = args.symbols or DEFI_UNIVERSE
+    print(f"fetching TVL for {len(symbols)} DeFi tokens from DefiLlama ...")
+    tvl = fetch_tvl_panel(symbols, start=args.start, end=args.end)
+    out = save_tvl(tvl, args.out)
+    print(f"saved TVL ({tvl.height:,} rows, {tvl['symbol'].n_unique()} tokens) -> {out}")
+    return 0
+
+
 def cmd_fetch_funding(args) -> int:
     from vfund.data.panel import save_funding
     from vfund.data.universe import DEFAULT_UNIVERSE, fetch_funding_universe, top_symbols_by_volume
@@ -162,14 +174,22 @@ def cmd_paper(args) -> int:
     from vfund.live.paper import PaperTracker
     from vfund.live.signal import format_book
 
-    panel = _load_clean(args.data)
     tracker = PaperTracker(args.state, start_equity=args.start_equity)
-    res = tracker.update(
-        panel, cost_bps=args.cost_bps,
-        size_lookback=args.size_lookback, vol_target=args.vol_target,
-        top_k=args.top_k, interval=args.interval,
-        min_short_dollar_volume=args.min_short_dv,
-    )
+    if args.three_sleeve:
+        from vfund.data.onchain import load_tvl
+        from vfund.data.panel import load_panel
+
+        res = tracker.update_three_sleeve(
+            _load_clean(args.data), load_panel(args.defi_data), load_tvl(args.tvl_data),
+            cost_bps=args.cost_bps, min_short_dollar_volume=args.min_short_dv,
+        )
+    else:
+        res = tracker.update(
+            _load_clean(args.data), cost_bps=args.cost_bps,
+            size_lookback=args.size_lookback, vol_target=args.vol_target,
+            top_k=args.top_k, interval=args.interval,
+            min_short_dollar_volume=args.min_short_dv,
+        )
     st = tracker.load()
     ret = st["equity"] / st["start_equity"] - 1.0
     print(f"[{res['status']}] as of {res['asof']}")
@@ -317,6 +337,14 @@ def build_parser() -> argparse.ArgumentParser:
     fu.add_argument("--out", required=True, help="output funding .parquet path")
     fu.set_defaults(func=cmd_fetch_funding)
 
+    # fetch-tvl
+    tv = sub.add_parser("fetch-tvl", help="download DeFi TVL history from DefiLlama")
+    tv.add_argument("--symbols", nargs="+", help="DeFi token symbols (default: DEFI_UNIVERSE)")
+    tv.add_argument("--start", required=True, help="ISO date")
+    tv.add_argument("--end", default=None)
+    tv.add_argument("--out", required=True, help="output TVL .parquet path")
+    tv.set_defaults(func=cmd_fetch_tvl)
+
     # research — cross-sectional long/short, with optional walk-forward
     r = sub.add_parser("research", help="cross-sectional long/short research")
     src = r.add_mutually_exclusive_group(required=True)
@@ -360,6 +388,10 @@ def build_parser() -> argparse.ArgumentParser:
     pap.add_argument("--top-k", type=int, default=5)
     pap.add_argument("--min-short-dv", type=float, default=5_000_000,
                      help="min trailing $/day to short a name (hard-to-short gate)")
+    pap.add_argument("--three-sleeve", action="store_true",
+                     help="track the diversified trend+size+on-chain book")
+    pap.add_argument("--defi-data", help="DeFi price panel .parquet (for --three-sleeve)")
+    pap.add_argument("--tvl-data", help="TVL .parquet (for --three-sleeve)")
     pap.set_defaults(func=cmd_paper)
 
     return parser

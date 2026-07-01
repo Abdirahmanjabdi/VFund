@@ -101,6 +101,73 @@ def combined_book(
     )
 
 
+def _sleeve_current_weights(bt) -> tuple[dict[str, float], float]:
+    """Latest-bar target weights + return volatility of one sleeve's backtester."""
+    C = bt.closes
+    rets = np.zeros_like(C)
+    rets[1:] = C[1:] / C[:-1] - 1.0
+    rets = np.where(np.isfinite(rets), rets, 0.0)
+    i = C.shape[0] - 1
+    w = bt._target_weights(i, rets)  # reuse the exact engine logic
+    weights = {s: float(x) for s, x in zip(bt.symbols, w) if abs(x) > 1e-9}
+    eq = bt.run().equity_curve["equity"].to_numpy()
+    r = eq[1:] / eq[:-1] - 1.0
+    return weights, float(r.std()) or 1e-9
+
+
+def three_sleeve_book(
+    broad_panel: pl.DataFrame,
+    defi_panel: pl.DataFrame,
+    tvl: pl.DataFrame,
+    *,
+    min_short_dollar_volume: float = 5_000_000,
+) -> Book:
+    """The diversified trend + size + on-chain book, as live target weights.
+
+    Each sleeve runs on its own universe via the real backtester (so the live
+    book matches the validated strategy), then they're combined at equal risk
+    (inverse-vol) across sleeves — coins appearing in more than one sleeve get
+    the summed allocation.
+    """
+    from vfund.backtest.cross_sectional import CrossSectionalBacktester
+    from vfund.strategy import CrossSectionalSize, TimeSeriesTrendEnsemble, TVLDivergence
+
+    # The on-chain sleeve aligns prices to TVL by symbol; TVL uses bare symbols
+    # (AAVE), so normalise the DeFi price panel (AAVEUSDT -> AAVE) to match.
+    defi_panel = defi_panel.with_columns(pl.col("symbol").str.replace(r"USDT$", ""))
+    common = dict(interval="1d", cost_bps=10, short_cost_bps_annual=1000)
+    sleeves = [
+        CrossSectionalBacktester(broad_panel, TimeSeriesTrendEnsemble(),
+                                 rebalance_every=7, neutralize=False, vol_target=0.30,
+                                 vol_lookback=30, max_leverage=3.0,
+                                 min_short_dollar_volume=min_short_dollar_volume, **common),
+        CrossSectionalBacktester(broad_panel, CrossSectionalSize(20), rebalance_every=7,
+                                 top_k=5, min_short_dollar_volume=min_short_dollar_volume,
+                                 **common),
+        CrossSectionalBacktester(defi_panel, TVLDivergence(60), rebalance_every=7,
+                                 top_k=5, tvl=tvl, **common),
+    ]
+    weights, vols, asof = [], [], None
+    for bt in sleeves:
+        w, v = _sleeve_current_weights(bt)
+        weights.append(w)
+        vols.append(v)
+        asof = bt.timestamps[-1]
+
+    rw = np.array([1.0 / v for v in vols])
+    rw /= rw.sum()  # inverse-vol risk allocation across sleeves
+
+    combined: dict[str, float] = {}
+    for alloc, sleeve in zip(rw, weights):
+        for s, x in sleeve.items():
+            key = s[:-4] if s.endswith("USDT") else s  # normalise BTCUSDT<->BTC
+            combined[key] = combined.get(key, 0.0) + alloc * x
+    combined = {s: w for s, w in combined.items() if abs(w) > 1e-6}
+    arr = np.array(list(combined.values()))
+    return Book(weights=combined, asof=asof, gross=float(np.abs(arr).sum()),
+                net=float(arr.sum()))
+
+
 def format_book(book: Book) -> str:
     longs = sorted(((s, w) for s, w in book.weights.items() if w > 0), key=lambda x: -x[1])
     shorts = sorted(((s, w) for s, w in book.weights.items() if w < 0), key=lambda x: x[1])

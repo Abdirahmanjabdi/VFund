@@ -29,6 +29,14 @@ DEFAULT_UNIVERSE: list[str] = [
 _TICKER_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
 _FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
+# DeFi tokens (bare symbols) that trade on Binance and have DefiLlama TVL — the
+# universe for the on-chain (TVL-divergence) sleeve.
+DEFI_UNIVERSE: list[str] = [
+    "AAVE", "UNI", "CRV", "COMP", "SUSHI", "LDO", "GMX", "PENDLE", "CAKE",
+    "DYDX", "1INCH", "BAL", "YFI", "RUNE", "JOE", "LQTY", "SPELL", "CVX",
+    "RPL", "STG", "ENA", "ETHFI", "JTO", "JUP", "RAY",
+]
+
 # Curated USDT pairs delisted from Binance spot in the 2021-2025 era, for which
 # the public klines endpoint still serves history (the candle series simply ends
 # at the delisting date). Including these in a universe is the single biggest

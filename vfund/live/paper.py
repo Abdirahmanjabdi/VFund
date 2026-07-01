@@ -45,6 +45,28 @@ class PaperTracker:
         panel = validate_panel(panel)
         book = combined_book(panel, **book_kwargs)
         ts, prices = _latest_prices(panel)
+        return self.record(book, ts, prices, cost_bps=cost_bps)
+
+    def update_three_sleeve(
+        self, broad: pl.DataFrame, defi: pl.DataFrame, tvl: pl.DataFrame,
+        *, cost_bps: float = 10.0, min_short_dollar_volume: float = 5_000_000,
+    ) -> dict:
+        """Mark the diversified trend+size+on-chain book forward."""
+        from vfund.live.signal import three_sleeve_book
+
+        book = three_sleeve_book(broad, defi, tvl,
+                                 min_short_dollar_volume=min_short_dollar_volume)
+        ts, p_broad = _latest_prices(broad)
+        _, p_defi = _latest_prices(defi)
+
+        def strip(d):  # normalise BTCUSDT<->BTC to match the book's keys
+            return {(k[:-4] if k.endswith("USDT") else k): v for k, v in d.items()}
+
+        prices = {**strip(p_defi), **strip(p_broad)}  # broad price wins on overlap
+        return self.record(book, ts, prices, cost_bps=cost_bps)
+
+    def record(self, book, ts: str, prices: dict, *, cost_bps: float = 10.0) -> dict:
+        """Mark the account forward given a precomputed book and latest prices."""
         cost = cost_bps / 10_000.0
         st = self.load()
 
