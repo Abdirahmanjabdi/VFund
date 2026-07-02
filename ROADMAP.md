@@ -141,8 +141,12 @@ not backtest returns, decide whether an edge is real.
   aggregate stablecoin supply expands, step aside when it contracts. Improves the
   majors basket: Sharpe 0.89→1.01, CAGR 48→54%, **max drawdown −79%→−61%**, better
   in-sample and out-of-sample. A directional (beta) overlay, not market-neutral alpha.
-- Next on-chain: larger coin coverage; combine the macro overlay with the trend
-  engine; more revenue/usage signals.
+- ✅ **Full composed book** (`examples/full_book.py`): three uncorrelated (~0.05)
+  engines — 4-sleeve alpha, majors carry, stablecoin macro. Verdict: **alpha +
+  carry (50/50) is the best book — Sharpe 1.94, max drawdown −7%, OOS 0.92**; the
+  macro overlay HURTS it (injects beta → drawdown −22%, OOS 0.11), so macro is a
+  tool for *directional* books, not this market-neutral one.
+- Next on-chain: larger coin coverage; more revenue/usage signals.
 
 ## v0.2 — hardening (realism)
 - ✅ Position **capacity limits** (`capacity_aum`, `max_participation`): cap each
