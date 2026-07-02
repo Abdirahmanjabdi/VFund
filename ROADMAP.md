@@ -129,8 +129,12 @@ not backtest returns, decide whether an edge is real.
   on-chain usage grew but whose price lagged — a fundamental value bet) is the
   first *new* signal positive in BOTH periods (IS 1.09 / OOS 0.44) — differentiated,
   less-crowded data. Promising lead, not confirmed (small universe, OOS peeked).
-- Next on-chain: fees/revenue and stablecoin-flow signals; larger coin coverage;
-  combine TVL-value with the trend/size book.
+- ✅ On-chain **fees/revenue** ingest (`fetch_fees_panel`, DefiLlama). Fees
+  *divergence* (revenue grew but price lagged) is a new CANDIDATE — positive
+  in-sample (0.66) AND out-of-sample (0.54), only +0.13 correlated with the TVL
+  sleeve → a genuinely new, stackable on-chain edge (`examples/onchain_fees.py`).
+- Next on-chain: stablecoin-flow (macro/regime) signals; fold the fees sleeve
+  into the book as a 4th diversifier; larger coin coverage.
 
 ## v0.2 — hardening (realism)
 - ✅ Position **capacity limits** (`capacity_aum`, `max_participation`): cap each

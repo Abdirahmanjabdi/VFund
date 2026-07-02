@@ -20,6 +20,7 @@ import requests
 
 _PROTOCOLS_URL = "https://api.llama.fi/protocols"
 _PROTOCOL_URL = "https://api.llama.fi/protocol/{slug}"
+_FEES_URL = "https://api.llama.fi/summary/fees/{slug}?dataType=dailyFees"
 
 
 def slugs_by_symbol(session: requests.Session | None = None) -> dict[str, str]:
@@ -49,6 +50,58 @@ def fetch_protocol_tvl(slug: str, session: requests.Session | None = None) -> pl
             "tvl": [float(p.get("totalLiquidityUSD", 0.0)) for p in points],
         }
     ).with_columns(pl.col("timestamp").cast(pl.Datetime("ms", time_zone="UTC")))
+
+
+def fetch_protocol_fees(slug: str, session: requests.Session | None = None) -> pl.DataFrame:
+    """Fetch a protocol's daily fee (revenue) history as (timestamp, fees)."""
+    sess = session or requests.Session()
+    data = sess.get(_FEES_URL.format(slug=slug), timeout=30).json()
+    chart = data.get("totalDataChart", [])
+    if not chart:
+        raise RuntimeError(f"no fee history for {slug}")
+    return pl.DataFrame(
+        {
+            "timestamp": [int(p[0]) * 1000 for p in chart],
+            "fees": [float(p[1]) for p in chart],
+        }
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime("ms", time_zone="UTC")))
+
+
+def fetch_fees_panel(
+    symbols: list[str],
+    *,
+    start: datetime | str,
+    end: datetime | str | None = None,
+) -> pl.DataFrame:
+    """Build a long fee-revenue panel (timestamp, symbol, fees) for the symbols.
+
+    Fees measure real protocol *revenue* — distinct from TVL (parked capital) —
+    so a fee signal captures usage/earnings the price may not yet reflect.
+    """
+    sess = requests.Session()
+    smap = slugs_by_symbol(sess)
+    start_ms, end_ms = _to_ms(start), _to_ms(end) if end else int(datetime.now().timestamp() * 1000)
+    frames = []
+    for sym in symbols:
+        slug = smap.get(sym)
+        if slug is None:
+            continue
+        try:
+            df = fetch_protocol_fees(slug, sess)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! {sym} ({slug}): {exc}")
+            continue
+        df = (
+            df.filter((pl.col("timestamp") >= _dt(start_ms)) & (pl.col("timestamp") <= _dt(end_ms)))
+            .with_columns(pl.col("timestamp").dt.truncate("1d"))
+            .group_by("timestamp").agg(pl.col("fees").last())
+            .with_columns(pl.lit(sym).alias("symbol"))
+        )
+        frames.append(df.select(["timestamp", "symbol", "fees"]))
+        print(f"  + {sym} ({slug}): {df.height} days")
+    if not frames:
+        raise RuntimeError("no fees fetched")
+    return pl.concat(frames).sort(["symbol", "timestamp"])
 
 
 def fetch_tvl_panel(
