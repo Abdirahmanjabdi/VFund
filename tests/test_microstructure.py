@@ -1,6 +1,7 @@
 """Tests for the order book and the adverse-selection simulation."""
 
 from vfund.microstructure import LimitOrderBook, MarketMakingSim
+from vfund.microstructure.simulator import _mm_loop, mm_loop_py
 
 
 def test_order_book_basics():
@@ -25,6 +26,17 @@ def test_noise_flow_maker_earns_spread():
     res = MarketMakingSim(n_steps=30_000, half_spread=2, informed_frac=0.0,
                           sigma=2.0, seed=1).run()
     assert res.total_pnl > 0
+
+
+def test_mm_loop_dispatch_matches_reference():
+    # The dispatched loop (Rust if built, else Python) must match the reference
+    # exactly given identical flow.
+    sim = MarketMakingSim(n_steps=15_000, half_spread=2, informed_frac=0.5, seed=3)
+    flow = sim._flow()
+    ref_pnl, ref_fills = mm_loop_py(*flow, 2)
+    pnl, fills = _mm_loop(*flow, 2)
+    assert fills == ref_fills
+    assert abs(pnl - ref_pnl) < 1e-6
 
 
 def test_informed_flow_causes_losses():

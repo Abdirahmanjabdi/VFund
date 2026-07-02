@@ -122,8 +122,58 @@ fn simulate<'py>(
     ))
 }
 
+/// Market-making matching loop (mirrors `microstructure/simulator.py::mm_loop_py`).
+///
+/// Given a pre-generated value path and order stream, run the sequential fill
+/// loop and return (realised P&L, number of fills). One fill per side per step.
+#[pyfunction]
+fn mm_loop(
+    value: PyReadonlyArray1<i64>,
+    n_orders: PyReadonlyArray1<i64>,
+    informed: PyReadonlyArray1<i64>,
+    noise: PyReadonlyArray1<i64>,
+    half_spread: i64,
+) -> PyResult<(f64, i64)> {
+    let value = value.as_array();
+    let n_orders = n_orders.as_array();
+    let informed = informed.as_array();
+    let noise = noise.as_array();
+    let h = half_spread;
+
+    let mut total_pnl = 0.0_f64;
+    let mut n_fills = 0_i64;
+    let mut ptr = 0usize;
+
+    for t in 0..n_orders.len() {
+        let v = value[t];
+        let future = value[t + 1] as f64;
+        let up = value[t + 1] > value[t];
+        let mut ask_avail = true;
+        let mut bid_avail = true;
+        for _ in 0..n_orders[t] {
+            let side = if informed[ptr] != 0 {
+                if up { 1 } else { -1 }
+            } else {
+                noise[ptr]
+            };
+            ptr += 1;
+            if side > 0 && ask_avail {
+                total_pnl += (v + h) as f64 - future;
+                n_fills += 1;
+                ask_avail = false;
+            } else if side < 0 && bid_avail {
+                total_pnl += future - (v - h) as f64;
+                n_fills += 1;
+                bid_avail = false;
+            }
+        }
+    }
+    Ok((total_pnl, n_fills))
+}
+
 #[pymodule]
 fn vfund_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(simulate, m)?)?;
+    m.add_function(wrap_pyfunction!(mm_loop, m)?)?;
     Ok(())
 }

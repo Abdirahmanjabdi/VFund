@@ -70,6 +70,21 @@ strategy scoring still runs in Python each rebalance — ~2.2× on a 40-asset ×
 the simulation loop dominates. Results are bit-identical to the Python path
 (max abs difference ~1e-12), and it falls back to pure Python when unbuilt.
 
+## What the core accelerates
+
+Two hot loops run natively when the extension is built:
+
+- **`simulate`** — the cross-sectional backtest's per-bar loop (`vfund/backtest/`).
+  Used automatically by `CrossSectionalBacktester.run()`.
+- **`mm_loop`** — the market-making simulation's matching loop
+  (`vfund/microstructure/simulator.py`). ~57× faster on 500k steps
+  (541 ms → 9.5 ms), identical results — enough to run adverse-selection Monte
+  Carlo at millions of steps. Python generates the random flow (vectorised); Rust
+  runs the sequential matching.
+
+Both keep a pure-Python reference that is the specification, verified by parity
+tests, and both fall back to Python when the extension isn't built.
+
 ## Why this is worth doing
 
 Low-latency, cache-friendly systems code in Rust is among the highest-leverage
