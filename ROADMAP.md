@@ -133,8 +133,16 @@ not backtest returns, decide whether an edge is real.
   *divergence* (revenue grew but price lagged) is a new CANDIDATE — positive
   in-sample (0.66) AND out-of-sample (0.54), only +0.13 correlated with the TVL
   sleeve → a genuinely new, stackable on-chain edge (`examples/onchain_fees.py`).
-- Next on-chain: stablecoin-flow (macro/regime) signals; fold the fees sleeve
-  into the book as a 4th diversifier; larger coin coverage.
+- ✅ **4-sleeve book** (`examples/four_sleeve.py`): folding the fees sleeve into
+  trend+size+TVL lifts out-of-sample Sharpe 0.75→0.88 (weakly correlated, 0.02-0.13).
+  The fees sleeve earns its place.
+- ✅ **Stablecoin-supply macro timing** (`fetch_stablecoin_supply`,
+  `examples/stablecoin_macro.py`): a risk-on/off overlay — hold the market when
+  aggregate stablecoin supply expands, step aside when it contracts. Improves the
+  majors basket: Sharpe 0.89→1.01, CAGR 48→54%, **max drawdown −79%→−61%**, better
+  in-sample and out-of-sample. A directional (beta) overlay, not market-neutral alpha.
+- Next on-chain: larger coin coverage; combine the macro overlay with the trend
+  engine; more revenue/usage signals.
 
 ## v0.2 — hardening (realism)
 - ✅ Position **capacity limits** (`capacity_aum`, `max_participation`): cap each

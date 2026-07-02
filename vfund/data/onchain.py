@@ -52,6 +52,34 @@ def fetch_protocol_tvl(slug: str, session: requests.Session | None = None) -> pl
     ).with_columns(pl.col("timestamp").cast(pl.Datetime("ms", time_zone="UTC")))
 
 
+_STABLECOIN_URL = "https://stablecoins.llama.fi/stablecoincharts/all"
+
+
+def fetch_stablecoin_supply(
+    *, start: datetime | str, end: datetime | str | None = None,
+) -> pl.DataFrame:
+    """Fetch aggregate stablecoin circulating supply (timestamp, supply) in USD.
+
+    Total stablecoin supply is a macro liquidity gauge: when it grows, capital is
+    flowing into crypto (risk-on); when it shrinks, capital is leaving. Not a
+    cross-sectional signal — a market-timing / regime overlay.
+    """
+    data = requests.get(_STABLECOIN_URL, timeout=30).json()
+
+    def circ(x):
+        c = x.get("totalCirculating", {})
+        return float(c.get("peggedUSD", 0.0)) if isinstance(c, dict) else 0.0
+
+    start_ms, end_ms = _to_ms(start), _to_ms(end) if end else int(datetime.now().timestamp() * 1000)
+    return (
+        pl.DataFrame({"timestamp": [int(x["date"]) * 1000 for x in data],
+                      "supply": [circ(x) for x in data]})
+        .with_columns(pl.col("timestamp").cast(pl.Datetime("ms", time_zone="UTC")))
+        .filter((pl.col("timestamp") >= _dt(start_ms)) & (pl.col("timestamp") <= _dt(end_ms)))
+        .sort("timestamp")
+    )
+
+
 def fetch_protocol_fees(slug: str, session: requests.Session | None = None) -> pl.DataFrame:
     """Fetch a protocol's daily fee (revenue) history as (timestamp, fees)."""
     sess = session or requests.Session()
