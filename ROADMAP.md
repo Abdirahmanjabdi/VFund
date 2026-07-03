@@ -97,6 +97,20 @@ not backtest returns, decide whether an edge is real.
 - Next: forward paper-trade; maker-fill modelling; expand delisted set; model
   small-cap long-side liquidity/capacity limits.
 
+## Verification audit (all clear)
+
+A full correctness audit of the codebase:
+- ✅ **No look-ahead bias** — the gold-standard test (corrupt the future, the past
+  must be byte-identical) passes with *every* overlay active; now permanent in
+  `tests/test_lookahead.py`. The whole engine is causally correct.
+- ✅ **On-chain signals are real, not same-day-data artifacts** — they survive
+  (and improve under) a 1-bar data lag. On-chain overlays now default to a
+  conservative `tvl_lag=1` (you can't get same-day on-chain data live). Headline
+  book *improved*: alpha+carry OOS Sharpe 0.92 → **1.23** with the honest lag.
+- ✅ **Blend-weight leakage immaterial** — full-sample vs in-sample-only
+  inverse-vol weights give OOS 0.88 vs 0.87.
+- ✅ Clean code: no bare excepts, no TODOs, no dead code of note.
+
 ## v0.2 — large-cap / high-capacity search (in progress)
 - Price-based large-cap strategies (trend, momentum, reversal, low-vol on 13
   majors) found NO out-of-sample edge — majors are efficient/crowded

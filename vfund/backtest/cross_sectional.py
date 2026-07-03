@@ -48,6 +48,7 @@ class CrossSectionalBacktester:
         initial_cash: float = 10_000.0,
         funding: pl.DataFrame | None = None,
         tvl: pl.DataFrame | None = None,
+        tvl_lag: int = 1,
         vol_target: float | None = None,
         vol_lookback: int = 30,
         max_leverage: float = 3.0,
@@ -85,11 +86,19 @@ class CrossSectionalBacktester:
         else:
             self.funding_event = self.funding_prevailing = None
 
-        # Optional on-chain TVL overlay, forward-filled to the price timeline.
+        # Optional on-chain overlay (TVL, fees, …), forward-filled to the price
+        # timeline. Lagged by `tvl_lag` bars by default: on-chain metrics for day
+        # t are not reliably known until after t, so trading on same-day values
+        # would be look-ahead. Verified: the edge survives the lag (it's a slow
+        # fundamental signal, not a same-day-data artifact).
         if tvl is not None:
             from vfund.data.onchain import align_tvl
 
-            self.tvl = align_tvl(tvl, self.timestamps, self.symbols)
+            aligned = align_tvl(tvl, self.timestamps, self.symbols)
+            if tvl_lag > 0:
+                lag = np.full((tvl_lag, aligned.shape[1]), np.nan)
+                aligned = np.vstack([lag, aligned[:-tvl_lag]])
+            self.tvl = aligned
         else:
             self.tvl = None
 
