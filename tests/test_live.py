@@ -21,6 +21,21 @@ def test_combined_book_has_longs_and_shorts():
     assert "LONG" in text and "SHORT" in text
 
 
+def test_paper_tracker_rejects_stale_state(tmp_path):
+    # A huge gap between updates means the state file is stale/wrong; marking
+    # it forward in one step would corrupt the record. Must refuse.
+    import pytest
+
+    full = _panel(320)
+    ts = full.select("timestamp").unique().sort("timestamp")["timestamp"]
+    early = full.filter(pl.col("timestamp").is_in(ts.head(200).implode()))  # 120d gap
+
+    tracker = PaperTracker(tmp_path / "acct.json", start_equity=10_000)
+    tracker.update(early, interval="1d")
+    with pytest.raises(RuntimeError, match="stale"):
+        tracker.update(full, interval="1d")
+
+
 def test_paper_tracker_initializes_and_advances(tmp_path):
     full = _panel(320)
     ts = full.select("timestamp").unique().sort("timestamp")["timestamp"]

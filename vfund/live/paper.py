@@ -17,6 +17,15 @@ from vfund.data.panel import pivot_to_wide, validate_panel
 from vfund.live.signal import combined_book
 
 
+def _days_between(a: str, b: str) -> float:
+    """Days between two 'YYYY-MM-DD ...' timestamp strings (b - a)."""
+    from datetime import date
+
+    da = date.fromisoformat(a[:10])
+    db = date.fromisoformat(b[:10])
+    return (db - da).days
+
+
 def _latest_prices(panel: pl.DataFrame):
     # Ragged: the true latest bar; skip coins with no price then (delisted).
     wide = pivot_to_wide(panel, "close", drop_incomplete=False)
@@ -65,10 +74,27 @@ class PaperTracker:
         prices = {**strip(p_defi), **strip(p_broad)}  # broad price wins on overlap
         return self.record(book, ts, prices, cost_bps=cost_bps)
 
+    # An update gap larger than this is almost certainly a stale/wrong state
+    # file (e.g. a leftover from an old test), not a real holding period.
+    # Marking months of price moves in one step on old weights corrupts the
+    # forward record, so refuse rather than silently continue.
+    MAX_GAP_DAYS = 45
+
     def record(self, book, ts: str, prices: dict, *, cost_bps: float = 10.0) -> dict:
         """Mark the account forward given a precomputed book and latest prices."""
         cost = cost_bps / 10_000.0
         st = self.load()
+
+        if st is not None:
+            gap_days = _days_between(st["last_ts"], ts)
+            if gap_days > self.MAX_GAP_DAYS:
+                raise RuntimeError(
+                    f"paper state at {self.path} was last updated {st['last_ts'][:10]} "
+                    f"({gap_days:.0f} days before {ts[:10]}) - it looks stale. "
+                    f"Marking such a gap in one step would corrupt the forward "
+                    f"record. Archive the file and re-initialize, or update with "
+                    f"intermediate data first."
+                )
 
         if st is None:
             turnover = sum(abs(w) for w in book.weights.values())
