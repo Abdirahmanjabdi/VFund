@@ -111,6 +111,36 @@ A full correctness audit of the codebase:
   inverse-vol weights give OOS 0.88 vs 0.87.
 - ✅ Clean code: no bare excepts, no TODOs, no dead code of note.
 
+## Forward paper test (live — the only real judge)
+
+Running since **2026-07-01**, $100k notional, on the **3-sleeve** book (trend 35% /
+size 33% / on-chain 32% by risk) via a weekly scheduled task. Deliberately *not*
+repointed at the better 4-sleeve or alpha+carry books — restarting a forward test
+every time research improves destroys the thing that makes it worth running.
+
+| Date | Equity | Since start |
+|---|---|---|
+| 2026-07-01 | $99,917 | −0.08% |
+| 2026-07-08 | $99,906 | −0.09% |
+| 2026-07-13 | $98,301 | −1.70% |
+| 2026-07-22 | $95,487 | **−4.51%** |
+
+Read: a **factor drawdown**, not a broken book. Majors rose +8.1% over the same
+window while the book held market-neutral (net +0.008) — cross-sectional L/S is
+known to bleed in broad junk rallies where shorted small-caps outrun the longs.
+Historically 5% of rolling 3-week windows were ≤ −4.5% (worst −13.6%), against a
+backtested max drawdown of −21%. Three weeks is noise; the record stands untouched.
+
+Ops failures caught in week one (in a real fund these break before the alpha does):
+- **Stale-state bug** — the task marked a leftover 2024 test file forward by 22
+  months while exiting 0. Fixed: `PaperTracker` now refuses gaps > 45 days
+  (`MAX_GAP_DAYS`), with a test.
+- **Missed run** — machine asleep at the trigger; the late run was interrupted.
+  Fixed: restart-on-failure (3 retries) on the scheduled task.
+- Note: the `tvl_lag=1` audit fix landed ~2026-07-08, so the on-chain sleeve's
+  behaviour changed one week into the test. A strict improvement, but disclosed —
+  the record is not one frozen config from day one.
+
 ## v0.2 — large-cap / high-capacity search (in progress)
 - Price-based large-cap strategies (trend, momentum, reversal, low-vol on 13
   majors) found NO out-of-sample edge — majors are efficient/crowded
@@ -157,9 +187,10 @@ A full correctness audit of the codebase:
   in-sample and out-of-sample. A directional (beta) overlay, not market-neutral alpha.
 - ✅ **Full composed book** (`examples/full_book.py`): three uncorrelated (~0.05)
   engines — 4-sleeve alpha, majors carry, stablecoin macro. Verdict: **alpha +
-  carry (50/50) is the best book — Sharpe 1.94, max drawdown −7%, OOS 0.92**; the
-  macro overlay HURTS it (injects beta → drawdown −22%, OOS 0.11), so macro is a
-  tool for *directional* books, not this market-neutral one.
+  carry (50/50) is the best book — Sharpe 1.98, max drawdown −7%, OOS 1.23**
+  (post-audit, with on-chain data honestly lagged; was 1.94 / OOS 0.92 before);
+  the macro overlay HURTS it (injects beta → drawdown −22%, OOS 0.19), so macro
+  is a tool for *directional* books, not this market-neutral one.
 - Next on-chain: larger coin coverage; more revenue/usage signals.
 
 ## v0.2 — hardening (realism)

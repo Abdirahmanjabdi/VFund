@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-70%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-73%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -34,7 +34,8 @@ and cheaply, on paper, before any money is at risk.**
 
 | How backtests lie | VFund's defense |
 |---|---|
-| Look-ahead bias | Event-driven engine: decide on close `t`, fill at `t+1` |
+| Look-ahead bias | Event-driven engine: decide on close `t`, fill at `t+1` — and [*proven*](#verification-the-past-cannot-see-the-future) by a test that corrupts the future and asserts the past is byte-identical |
+| Stale/slow data used too early | On-chain metrics are lagged a bar (`tvl_lag=1`) — you can't trade a number you don't have yet |
 | Unpaid costs | Commission, slippage, short financing, hard-to-short all modelled |
 | Overfitting | Walk-forward selection; strict in-sample vs out-of-sample split |
 | Multiple testing | Probabilistic & Deflated Sharpe (`research/robustness.py`) |
@@ -51,7 +52,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 70 tests, no network needed
+pytest -q                                          # 73 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -71,25 +72,50 @@ strategy *loses* money — the engine tells the truth from the first run.
 
 ## The current result (honestly measured)
 
-After every de-biasing and friction, the platform's leading candidate is a
-**two-engine book**:
+The platform's leading candidate is a **two-engine book**:
 
 - **Alpha engine** — a small-cap cross-sectional book (trend + size + on-chain),
   higher return but capacity-limited to ~$2–5M.
 - **Yield engine** — a majors funding-basis carry, modest return but scalable,
   run cross-margined.
 
-They're nearly uncorrelated (≈ −0.02). A 50/50 blend (2021–2026, $100k):
+They're nearly uncorrelated (≈ −0.02), which is why blending them roughly halves
+the drawdown. Backtested 2021–2026 on $100k, after every de-biasing and friction,
+with on-chain data lagged one bar:
 
-| | Sharpe | CAGR | Max drawdown | Out-of-sample Sharpe |
-|---|---|---|---|---|
-| Alpha only | 1.40 | 29% | −19% | 0.93 |
-| 50/50 two-engine | **1.80** | 19% | **−9%** | **0.92** |
+| Book | $100k → | CAGR | Sharpe | Max DD | OOS Sharpe |
+|---|---|---|---|---|---|
+| 3-sleeve alpha *(the live config — see below)* | $388k | 27.9% | 1.35 | −21% | 1.00 |
+| 4-sleeve alpha (adds an on-chain **fees** sleeve) | $409k | 29.2% | 1.52 | −15% | 1.23 |
+| **4-sleeve alpha + carry (50/50)** | $260k | 19.0% | **1.98** | **−7%** | **1.23** |
+
+Note the trade-off: the alpha alone earns the most money; blending in the carry
+earns *less* but with a far better ride (Sharpe 1.98, −7% drawdown). Note also
+that **the book running forward is the weakest of the three** — the live account
+was deliberately left on the earlier 3-sleeve config rather than restarted every
+time research improved, because restarting a forward test destroys its value.
 
 **Nothing here is a confirmed, live-tradable edge.** These are backtested and
-out-of-sample results with known optimism. The only real test — a live forward
-paper account — is running now and needs months to speak. See
-[docs/CASE_STUDY.md](docs/CASE_STUDY.md) and the [limitations](#known-limitations).
+out-of-sample results with known optimism. The only real test is the live forward
+account below. See [docs/CASE_STUDY.md](docs/CASE_STUDY.md) and the
+[limitations](#known-limitations).
+
+## Verification: the past cannot see the future
+
+The failure that invalidates *every* number above is look-ahead bias. So it's
+tested directly, not assumed — `tests/test_lookahead.py` runs the engine with
+every overlay active (vol-targeting, shortability, capacity, funding, short
+costs), then **violently corrupts all data after a cut point and asserts the
+equity curve before it is byte-identical**:
+
+```python
+assert np.array_equal(base[:421], corrupted[:421])   # past is untouched
+assert not np.allclose(base[421:], corrupted[421:])  # future did change (sanity)
+```
+
+It passes with a maximum difference of exactly 0.0. A full audit also confirmed
+the on-chain edges survive (and *improve* under) conservative lagging, and that
+blend-weight leakage is immaterial. Details in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -102,7 +128,7 @@ vfund/
 │   ├── panel.py          multi-asset (ragged) panels + funding alignment
 │   ├── ingest.py         Binance spot & perp klines (paginated)
 │   ├── universe.py       liquid universes, funding, delisted coins (KNOWN_DELISTED)
-│   ├── onchain.py        DefiLlama TVL (on-chain fundamentals)
+│   ├── onchain.py        DefiLlama TVL, fees & stablecoin supply (on-chain data)
 │   ├── synthetic.py      GBM price/panel generators (offline demo & tests)
 │   └── storage.py        Parquet read/write
 ├── strategy/        # signals
@@ -136,7 +162,9 @@ vfund/
 - **Delisted coins** — Binance still serves klines for delisted symbols; a curated
   `KNOWN_DELISTED` list re-includes dead coins (LUNC, SRM, WAVES, …) to fix
   survivorship bias.
-- **DefiLlama TVL** — on-chain total-value-locked per protocol (`vfund fetch-tvl`).
+- **DefiLlama on-chain data** — total-value-locked per protocol (`vfund fetch-tvl`),
+  plus protocol **fees/revenue** and aggregate **stablecoin supply** (a macro
+  risk-appetite proxy). All lagged a bar before use.
 
 ## Strategies
 
@@ -202,6 +230,26 @@ periodically (a Windows scheduled task in `scripts/` automates it weekly) to
 accumulate a genuine, untouched out-of-sample record. The live signal runs the
 *validated* configuration (broad universe, hard-to-short gate).
 
+**A live account has been running since 2026-07-01**, $100k notional, on the
+3-sleeve book (trend 35% / size 33% / on-chain 32% by risk):
+
+| Date | Equity | Since start |
+|---|---|---|
+| 2026-07-01 | $99,917 | −0.08% |
+| 2026-07-08 | $99,906 | −0.09% |
+| 2026-07-13 | $98,301 | −1.70% |
+| 2026-07-22 | $95,487 | **−4.51%** |
+
+It is currently **in a drawdown**, and that is published here rather than quietly
+omitted. Context: over the same window the majors rallied **+8.1%**, and the book
+stayed market-neutral (net exposure +0.008) — so this is a *factor* drawdown, the
+known weakness of cross-sectional long/short in a broad junk rally, not a
+market-tracking loss. Historically **5% of rolling 3-week windows were this bad
+or worse** (worst: −13.6%), so it is well inside normal variance.
+
+Three weeks proves nothing either way. The record is left untouched and unadjusted
+— which is the entire point.
+
 ## The Rust core (optional)
 
 The innermost simulation loop can run natively via a [PyO3](https://pyo3.rs)
@@ -218,8 +266,8 @@ short-horizon / market-making edges (like reversal) that die as a taker.
 
 ## Examples
 
-25+ runnable scripts in `examples/` reproduce the entire research journey, from
-the first honest backtest to the two-engine book. **Each is explained in
+29 runnable scripts in `examples/` reproduce the entire research journey, from
+the first honest backtest to the full composed book. **Each is explained in
 [docs/EXAMPLES.md](docs/EXAMPLES.md).** Highlights:
 
 - `oos_gauntlet.py` — select in-sample, judge out-of-sample (the core discipline)
@@ -228,14 +276,16 @@ the first honest backtest to the two-engine book. **Each is explained in
 - `survivorship_check.py` — dead coins + short costs + hard-to-short
 - `capacity_curve.py` — how the edge decays as capital grows
 - `two_engine.py` — the combined alpha + carry book
+- `full_book.py` — the full composed book (4 alpha sleeves + carry + macro)
 
 ## Known limitations
 
 The results are backtested and out-of-sample, **not** live-confirmed. Honest
 caveats, in order of severity:
 
-1. **No live track record.** Every number predates the strategy's own design. The
-   forward paper account is the real judge and needs months.
+1. **No meaningful live track record.** The forward account is three weeks old and
+   currently down −4.5% — far too short to conclude anything in either direction.
+   Every backtested number predates the strategy's own design. Months are needed.
 2. **Survivorship is reduced, not eliminated.** Dead coins are re-included, but
    the current-liquid universe still has selection bias.
 3. **Multiple testing.** Deflated Sharpe adjusts for configs in one study, not the
@@ -248,7 +298,7 @@ caveats, in order of severity:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 70 tests, network-free
+pytest -q          # 73 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every

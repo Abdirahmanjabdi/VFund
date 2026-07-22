@@ -125,22 +125,60 @@ Three layers of modelling turned an exciting-but-fake number into an honest one:
 ## The two-engine book
 
 The two edges are nearly uncorrelated: a small-cap **alpha** engine and a majors
-**yield** engine. Combined 50/50, the book keeps a strong Sharpe (~1.8) with about
-half the drawdown of the alpha alone, and holds out-of-sample. That is a realistic
-fund structure — a high-return small book plus a scalable, modest carry — with
-every number honestly stress-tested.
+**yield** engine. Combined 50/50, the book keeps a strong Sharpe (~2.0) with about
+a third of the drawdown of the alpha alone, and holds out-of-sample. That is a
+realistic fund structure — a high-return small book plus a scalable, modest carry —
+with every number honestly stress-tested.
+
+A second on-chain sleeve was later added from protocol **fees** (revenue is harder
+to fake than TVL), and a macro overlay from aggregate **stablecoin supply** was
+tried and **rejected** — it looked plausible in-sample and earned nothing
+out-of-sample (0.19). The negative result is kept in `examples/stablecoin_macro.py`
+rather than deleted, because a research log that only records wins is a sales
+pitch, not a record.
+
+## Auditing the platform against itself
+
+Late in the project the obvious question was asked: *is any of this actually real,
+or has some subtle bug been flattering everything?* One bug — look-ahead, the past
+seeing the future — would invalidate every number produced. So instead of trusting
+the design, it was tested: corrupt all data after a cut point, and assert the
+equity curve **before** that point is byte-identical. With every overlay active,
+the difference was exactly **0.0**. That test now lives permanently in
+`tests/test_lookahead.py`.
+
+The audit found one genuine problem. On-chain metrics for day *t* aren't reliably
+known until after *t*, so trading them same-day was a subtle look-ahead. Lagging
+them a bar was the honest fix — and the edge **survived and improved** (the
+headline book's out-of-sample Sharpe went 0.92 → 1.23). That's the outcome you
+hope for: the signal was a slow fundamental one, not a data artifact. A more
+convenient result would have been more suspicious.
+
+## The forward test, in public
+
+A $100k paper account has run since 2026-07-01 on the 3-sleeve book. Three weeks
+in it is **down −4.5%** — published rather than quietly dropped. The market rose
++8.1% over the same window while the book held market-neutral, so this is a
+*factor* drawdown (the known weakness of cross-sectional long/short in a broad
+junk rally), and historically 5% of rolling 3-week windows were this bad or worse.
+
+Two operational failures also surfaced immediately, which is its own lesson: the
+weekly task once marked a **stale state file** forward by 22 months while
+reporting success, and another run died because the machine was asleep at the
+trigger. Both are fixed (a gap guard in `paper.py`, restart-on-failure on the
+task). In a real fund, the ops layer fails long before the alpha does.
 
 ## What actually got built
 
-A local-first Python platform (70+ tests, CI on 3.11 & 3.12), with an optional
+A local-first Python platform (73 tests, CI on 3.11 & 3.12), with an optional
 native Rust core (~77× on the hot loop). Market + perp + funding + delisted-coin +
-on-chain (TVL) ingestion; an event-driven, ragged cross-sectional long/short
-engine modelling costs, short financing, shortability, capacity, drawdown control,
-and maker fills; a research suite (walk-forward, robustness, Probabilistic/Deflated
-Sharpe, alpha/beta); a market-microstructure layer (order book + adverse-selection
-sim); a live signal + forward paper-trading loop; and 25+ `examples/` that
-reproduce the entire journey. It's public:
-<https://github.com/Abdirahmanjabdi/VFund>.
+on-chain (TVL, fees, stablecoin supply) ingestion; an event-driven, ragged
+cross-sectional long/short engine modelling costs, short financing, shortability,
+capacity, drawdown control, and maker fills — with its causality proven by test;
+a research suite (walk-forward, robustness, Probabilistic/Deflated Sharpe,
+alpha/beta); a market-microstructure layer (order book + adverse-selection sim); a
+live signal + forward paper-trading loop; and 29 `examples/` that reproduce the
+entire journey. It's public: <https://github.com/Abdirahmanjabdi/VFund>.
 
 ## The takeaway
 
@@ -152,4 +190,8 @@ and the judgment to trust it over a pretty backtest.
 
 That discipline — not any single edge — is the real asset. The only clean test
 left is the future, so a paper account now runs forward on data that didn't exist
-when the strategy was designed. Time, not another backtest, gets the final word.
+when the strategy was designed. It is currently losing. That number is published
+here unedited, and it will keep being published whichever way it goes, because a
+research record you'd only show when it flatters you isn't a record at all.
+
+Time, not another backtest, gets the final word.

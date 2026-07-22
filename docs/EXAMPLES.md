@@ -45,7 +45,10 @@ Run any with `python examples/<name>.py`.
 | Script | What it shows |
 |---|---|
 | `onchain_tvl.py` | TVL momentum vs TVL *divergence* (usage grew but price lagged). Divergence is positive in-sample **and** out-of-sample — the first differentiated lead. |
-| `diversified.py` | Adding the on-chain sleeve to trend+size. Near-uncorrelated; raises Sharpe and halves drawdown, out-of-sample. |
+| `diversified.py` | Adding the on-chain sleeve to trend+size. Near-uncorrelated; raises Sharpe and halves drawdown, out-of-sample. This is the **3-sleeve book now running live**. |
+| `onchain_fees.py` | The same divergence idea on protocol **fees/revenue** (harder to fake than TVL). A second, stronger on-chain sleeve. |
+| `four_sleeve.py` | Folding the fees sleeve in: the 4-sleeve alpha book (Sharpe 1.52, OOS 1.23). |
+| `stablecoin_macro.py` | Aggregate **stablecoin supply** as a macro risk-appetite signal — a timing overlay that, honestly measured, **did not work** (OOS 0.19). Kept as a negative result. |
 
 ## 6. Execution & microstructure
 
@@ -61,6 +64,7 @@ Run any with `python examples/<name>.py`.
 |---|---|
 | `largecap_search.py` | Price-based strategies on 13 majors — **no** out-of-sample edge (majors are efficient). |
 | `funding_carry_major.py` | Naive funding carry on majors (funding-only). High but optimistic Sharpe. |
+| `funding_carry_study.py` | The carry's regime dependence — when funding dries up (deleveraging), the yield sleeps. |
 | `funding_carry_basis.py` | Carry with the **real** perp basis. The hedge contains drawdowns; the real killers are thin margins (cost-sensitivity) and funding-regime dependence. |
 | `carry_liquidation.py` | Intraday squeeze risk via daily perp highs. Siloed leverage gets wiped out (DOGE +412% intraday); cross-margin is safe. Survival depends on margin setup. |
 
@@ -68,7 +72,8 @@ Run any with `python examples/<name>.py`.
 
 | Script | What it shows |
 |---|---|
-| `two_engine.py` | Small-cap alpha + majors carry, combined. Uncorrelated engines; a 50/50 blend lifts Sharpe to 1.80 and halves drawdown, out-of-sample. |
+| `two_engine.py` | Small-cap alpha + majors carry, combined. Uncorrelated engines; a 50/50 blend lifts Sharpe and halves drawdown, out-of-sample. |
+| `full_book.py` | **The final composed book:** 4 alpha sleeves + carry + the macro overlay, all measured together. Best result: alpha+carry 50/50 — Sharpe 1.98, −7% max drawdown, OOS 1.23. Also shows the macro overlay failing to earn its place. |
 
 ## Reproducing from scratch
 

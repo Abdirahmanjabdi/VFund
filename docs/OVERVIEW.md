@@ -85,8 +85,9 @@ The `examples/` scripts tell the whole story in order — see
 [EXAMPLES.md](EXAMPLES.md). Headline arc: honest backtesting → most factors die
 out-of-sample → trend's crisis alpha + size + on-chain combine into a small-cap
 book → survivorship/cost/capacity de-biasing → a majors funding carry for
-capacity → a two-engine (alpha + yield) book. No edge is *live-confirmed*; a
-forward paper account is the judge.
+capacity → a two-engine (alpha + yield) book → a self-audit proving the engine
+has no look-ahead. No edge is *live-confirmed*; a forward paper account (running
+since 2026-07-01) is the judge — see the log in [../ROADMAP.md](../ROADMAP.md).
 
 ## Contributing
 
