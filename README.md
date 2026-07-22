@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-85%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-114%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -52,7 +52,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 85 tests, no network needed
+pytest -q                                          # 114 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -145,6 +145,11 @@ vfund/
 │   ├── construct.py      scores→weights, vol-targeting, shortability
 │   ├── sim.py / _accel.py the hot-loop primitive + Rust dispatch
 │   └── broker.py, portfolio.py, result.py
+├── factors/         # formulaic alphas
+│   ├── operators.py      19 look-ahead-proof operators (rank/ts_*/delta/decay)
+│   ├── purity.py         AST gate: an alpha that could peek fails at import
+│   ├── zoo.py            41 published alphas (Kakushadze 101 subset + academic)
+│   └── bench.py          IC / IR + alive-reversed-dead categorisation
 ├── research/        # validation
 │   ├── splits.py         time-series train/test + walk-forward windows
 │   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
@@ -333,7 +338,7 @@ caveats, in order of severity:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 85 tests, network-free
+pytest -q          # 114 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every
