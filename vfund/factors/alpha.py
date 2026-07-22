@@ -59,6 +59,43 @@ class Panel:
         return self.close.shape
 
 
+def panel_from_long(df, *, min_symbols: int = 5) -> Panel:
+    """Build a :class:`Panel` from VFund's long-format OHLCV frame.
+
+    The panel is left **ragged**: a coin that had not listed yet (or has since
+    delisted) is NaN rather than forward-filled, which is what keeps a
+    survivorship-corrected universe honest. Operators propagate the NaN.
+
+    Args:
+        df: long panel with timestamp/symbol/open/high/low/close/volume.
+        min_symbols: refuse a universe too small to rank cross-sectionally.
+
+    Raises:
+        ValueError: if fewer than ``min_symbols`` symbols are present.
+    """
+    from vfund.data.panel import pivot_to_wide, validate_panel
+
+    df = validate_panel(df)
+    wide_close = pivot_to_wide(df, "close", drop_incomplete=False)
+    symbols = [c for c in wide_close.columns if c != "timestamp"]
+    if len(symbols) < min_symbols:
+        raise ValueError(
+            f"need >= {min_symbols} symbols to rank a cross-section, got {len(symbols)}"
+        )
+
+    def field(name: str) -> np.ndarray:
+        w = pivot_to_wide(df, name, drop_incomplete=False)
+        # Reindex onto the close timeline so every field shares one shape.
+        aligned = wide_close.select("timestamp").join(w, on="timestamp", how="left")
+        return aligned.select(symbols).to_numpy().astype(np.float64)
+
+    return Panel(
+        close=wide_close.select(symbols).to_numpy().astype(np.float64),
+        open=field("open"), high=field("high"), low=field("low"),
+        volume=field("volume"), symbols=symbols,
+    )
+
+
 @dataclass(frozen=True)
 class Alpha:
     """A registered formulaic alpha."""

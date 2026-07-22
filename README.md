@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-114%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-115%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -52,7 +52,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 114 tests, no network needed
+pytest -q                                          # 115 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -316,6 +316,7 @@ the first honest backtest to the full composed book. **Each is explained in
 - `survivorship_check.py` — dead coins + short costs + hard-to-short
 - `capacity_curve.py` — how the edge decays as capital grows
 - `two_engine.py` — the combined alpha + carry book
+- `crypto_alpha_study.py` — 41 equity alphas on crypto, with a null control
 - `full_book.py` — the full composed book (4 alpha sleeves + carry + macro)
 
 ## Known limitations
@@ -338,7 +339,7 @@ caveats, in order of severity:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 114 tests, network-free
+pytest -q          # 115 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every

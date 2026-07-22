@@ -20,13 +20,14 @@ from vfund.factors.alpha import (
     all_alphas,
     alpha,
     get,
+    panel_from_long,
 )
 from vfund.factors.bench import ICResult, bench, information_coefficient, summarise
 from vfund.factors.purity import PurityError, assert_pure, check_source
 
 __all__ = [
     "Alpha", "Panel", "FormulaicStrategy", "REGISTRY",
-    "alpha", "get", "all_alphas",
+    "alpha", "get", "all_alphas", "panel_from_long",
     "ICResult", "bench", "information_coefficient", "summarise",
     "PurityError", "assert_pure", "check_source",
 ]

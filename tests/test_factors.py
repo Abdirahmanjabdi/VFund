@@ -271,3 +271,22 @@ def test_formulaic_strategy_returns_nan_during_warmup():
     strat = FormulaicStrategy("academic_high52w")     # 370-bar warmup
     ctx = PanelContext(299, p.close, p.symbols, volumes=p.volume)
     assert np.isnan(strat.scores(ctx)).all()
+
+
+def test_null_control_produces_no_false_positives():
+    """The study's control: no alpha may score on data with no edge in it.
+
+    This is what licenses the crypto study's headline. If the bench flagged
+    alphas on independent zero-drift GBM with heterogeneous volatility, every
+    "alive" verdict on real data would be suspect - the metric would be reading
+    an artifact of ranking skewed returns rather than a signal.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
+    from crypto_alpha_study import null_control
+
+    results = bench(all_alphas(), null_control(60, 2000, seed=42))
+    flagged = [r.name for r in results if r.verdict in ("alive", "reversed")]
+    assert not flagged, f"bench found signal in pure noise: {flagged}"
