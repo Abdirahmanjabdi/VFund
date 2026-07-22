@@ -114,8 +114,12 @@ def cmd_fetch_universe(args) -> int:
         symbols = args.symbols
     else:
         symbols = DEFAULT_UNIVERSE
-    print(f"fetching {len(symbols)} symbols {args.interval} from Binance ...")
-    panel = fetch_universe(symbols, args.interval, start=args.start, end=args.end)
+    kind = "perp" if getattr(args, "futures", False) else "spot"
+    print(f"fetching {len(symbols)} symbols {args.interval} ({kind}) from Binance ...")
+    panel = fetch_universe(
+        symbols, args.interval, start=args.start, end=args.end,
+        futures=getattr(args, "futures", False),
+    )
     out = save_panel(panel, args.out)
     print(f"saved panel ({panel.height:,} rows, {panel['symbol'].n_unique()} symbols) -> {out}")
     return 0
@@ -130,6 +134,23 @@ def cmd_fetch_tvl(args) -> int:
     tvl = fetch_tvl_panel(symbols, start=args.start, end=args.end)
     out = save_tvl(tvl, args.out)
     print(f"saved TVL ({tvl.height:,} rows, {tvl['symbol'].n_unique()} tokens) -> {out}")
+    return 0
+
+
+def cmd_fetch_fees(args) -> int:
+    import polars as pl
+
+    from vfund.data.onchain import fetch_fees_panel, save_tvl
+    from vfund.data.universe import DEFI_UNIVERSE
+
+    symbols = args.symbols or DEFI_UNIVERSE
+    print(f"fetching protocol fees for {len(symbols)} DeFi tokens from DefiLlama ...")
+    fees = fetch_fees_panel(symbols, start=args.start, end=args.end)
+    # Stored under the 'tvl' column so the on-chain sleeve machinery (align_tvl,
+    # TVLDivergence) reads fee revenue with no special-casing.
+    fees = fees.rename({"fees": "tvl"}) if "fees" in fees.columns else fees
+    out = save_tvl(fees.select(["timestamp", "symbol", "tvl"]), args.out)
+    print(f"saved fees ({fees.height:,} rows, {fees['symbol'].n_unique()} tokens) -> {out}")
     return 0
 
 
@@ -175,10 +196,29 @@ def cmd_paper(args) -> int:
     from vfund.live.signal import format_book
 
     tracker = PaperTracker(args.state, start_equity=args.start_equity)
-    if args.three_sleeve:
+    if args.two_engine:
+        from vfund.data.onchain import load_tvl
+        from vfund.data.panel import load_funding, load_panel
+
+        missing = [f"--{n.replace('_', '-')}" for n in
+                   ("defi_data", "tvl_data", "perp_data", "funding_data")
+                   if not getattr(args, n)]
+        if missing:
+            raise ValueError(f"--two-engine requires {', '.join(missing)}")
+        broad = _load_clean(args.data)
+        res = tracker.update_two_engine(
+            broad, load_panel(args.defi_data), load_tvl(args.tvl_data),
+            broad, load_panel(args.perp_data), load_funding(args.funding_data),
+            fees=load_tvl(args.fees_data) if args.fees_data else None,
+            cost_bps=args.cost_bps, min_short_dollar_volume=args.min_short_dv,
+            carry_weight=args.carry_weight,
+        )
+    elif args.three_sleeve:
         from vfund.data.onchain import load_tvl
         from vfund.data.panel import load_panel
 
+        if not args.defi_data or not args.tvl_data:
+            raise ValueError("--three-sleeve requires --defi-data and --tvl-data")
         res = tracker.update_three_sleeve(
             _load_clean(args.data), load_panel(args.defi_data), load_tvl(args.tvl_data),
             cost_bps=args.cost_bps, min_short_dollar_volume=args.min_short_dv,
@@ -194,9 +234,19 @@ def cmd_paper(args) -> int:
     ret = st["equity"] / st["start_equity"] - 1.0
     print(f"[{res['status']}] as of {res['asof']}")
     print(f"  last-period return   {res['port_ret']*100:+.2f}%")
+    if args.two_engine:
+        print(f"    alpha engine       {res['alpha_ret']*100:+.2f}%"
+              f"   (pot ${st['alpha_equity']:,.2f})")
+        print(f"    carry engine       {res['carry_ret']*100:+.2f}%"
+              f"   (pot ${st['carry_equity']:,.2f})")
     print(f"  paper equity         ${st['equity']:,.2f}  ({ret*100:+.1f}% since {st['created'][:10]})")
     print(f"  updates recorded     {len(st['history'])}\n")
     print(format_book(res["book"]))
+    if args.two_engine:
+        from vfund.live.carry import format_carry
+
+        print()
+        print(format_carry(res["sleeve"]))
     return 0
 
 
@@ -326,6 +376,8 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--start", required=True, help="ISO date, e.g. 2023-01-01")
     u.add_argument("--end", default=None)
     u.add_argument("--out", required=True, help="output panel .parquet path")
+    u.add_argument("--futures", action="store_true",
+                   help="fetch USD-M perpetual bars instead of spot (for basis/carry)")
     u.set_defaults(func=cmd_fetch_universe)
 
     # fetch-funding
@@ -344,6 +396,14 @@ def build_parser() -> argparse.ArgumentParser:
     tv.add_argument("--end", default=None)
     tv.add_argument("--out", required=True, help="output TVL .parquet path")
     tv.set_defaults(func=cmd_fetch_tvl)
+
+    # fetch-fees
+    fe = sub.add_parser("fetch-fees", help="download DeFi protocol fee revenue from DefiLlama")
+    fe.add_argument("--symbols", nargs="+", help="DeFi token symbols (default: DEFI_UNIVERSE)")
+    fe.add_argument("--start", required=True, help="ISO date")
+    fe.add_argument("--end", default=None)
+    fe.add_argument("--out", required=True, help="output fees .parquet path")
+    fe.set_defaults(func=cmd_fetch_fees)
 
     # research — cross-sectional long/short, with optional walk-forward
     r = sub.add_parser("research", help="cross-sectional long/short research")
@@ -389,9 +449,17 @@ def build_parser() -> argparse.ArgumentParser:
     pap.add_argument("--min-short-dv", type=float, default=5_000_000,
                      help="min trailing $/day to short a name (hard-to-short gate)")
     pap.add_argument("--three-sleeve", action="store_true",
-                     help="track the diversified trend+size+on-chain book")
-    pap.add_argument("--defi-data", help="DeFi price panel .parquet (for --three-sleeve)")
-    pap.add_argument("--tvl-data", help="TVL .parquet (for --three-sleeve)")
+                     help="track the diversified trend+size+on-chain book (the alpha engine)")
+    pap.add_argument("--two-engine", action="store_true",
+                     help="track the full two-engine book: alpha (3-sleeve) + funding carry")
+    pap.add_argument("--defi-data", help="DeFi price panel .parquet (for --three-sleeve/--two-engine)")
+    pap.add_argument("--tvl-data", help="TVL .parquet (for --three-sleeve/--two-engine)")
+    pap.add_argument("--perp-data", help="USD-M perpetual panel .parquet (for --two-engine)")
+    pap.add_argument("--funding-data", help="funding panel .parquet (for --two-engine)")
+    pap.add_argument("--fees-data",
+                     help="protocol fee-revenue .parquet; adds the 4th alpha sleeve")
+    pap.add_argument("--carry-weight", type=float, default=0.5,
+                     help="fraction of capital in the carry engine (default 0.5)")
     pap.set_defaults(func=cmd_paper)
 
     return parser

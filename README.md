@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-73%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-85%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -52,7 +52,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 73 tests, no network needed
+pytest -q                                          # 85 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -90,10 +90,14 @@ with on-chain data lagged one bar:
 | **4-sleeve alpha + carry (50/50)** | $260k | 19.0% | **1.98** | **−7%** | **1.23** |
 
 Note the trade-off: the alpha alone earns the most money; blending in the carry
-earns *less* but with a far better ride (Sharpe 1.98, −7% drawdown). Note also
-that **the book running forward is the weakest of the three** — the live account
-was deliberately left on the earlier 3-sleeve config rather than restarted every
-time research improved, because restarting a forward test destroys its value.
+earns *less* but with a far better ride (Sharpe 1.98, −7% drawdown).
+
+The original forward account was deliberately left on the earlier 3-sleeve config
+rather than restarted every time research improved, because restarting a forward
+test destroys its value. That kept the record honest but left the *best* book
+untested forward — so as of 2026-07-22 a **second, parallel** account runs the
+4-sleeve + carry candidate alongside it, and neither is restarted again. See
+[live / forward paper trading](#live--forward-paper-trading).
 
 **Nothing here is a confirmed, live-tradable edge.** These are backtested and
 out-of-sample results with known optimism. The only real test is the live forward
@@ -146,7 +150,8 @@ vfund/
 │   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
 │   └── robustness.py     Probabilistic & Deflated Sharpe, bootstraps, alpha/beta
 ├── live/            # forward trading
-│   ├── signal.py         today's target book (single or 3-sleeve)
+│   ├── signal.py         today's target book (single / 3- / 4-sleeve alpha)
+│   ├── carry.py          funding-basis carry sleeve (the non-spot-weight engine)
 │   └── paper.py          persistent forward paper-account tracker
 ├── microstructure/  # order book & market-making
 │   ├── orderbook.py      price-time limit order book + matching engine
@@ -250,6 +255,36 @@ or worse** (worst: −13.6%), so it is well inside normal variance.
 Three weeks proves nothing either way. The record is left untouched and unadjusted
 — which is the entire point.
 
+### A second account, on the leading candidate
+
+Leaving the original account alone is right — restarting a forward test destroys
+it — but it left the *best* configuration untested forward. So since **2026-07-22**
+a **second, parallel** account runs the full two-engine book at $100k:
+
+| Account | State file | Book |
+|---|---|---|
+| Original *(untouched)* | `data/paper.json` | 3-sleeve alpha |
+| New | `data/paper_two_engine.json` | 4-sleeve alpha + funding carry, 50/50 |
+
+Running both is deliberate. The alpha engine is common to each, so the difference
+between the two curves *isolates what the carry engine actually contributes
+forward* — rather than leaving that to a backtest to claim. Carry's standalone
+backtest Sharpe is ~5, which is exactly the kind of number that should be
+distrusted until forward data speaks: it comes from low volatility that masks
+thin-margin and squeeze tail-risk (see `examples/carry_liquidation.py`).
+
+Carry cannot be expressed as spot weights — it is a long-spot / short-perp pair
+whose return is `funding − basis change` — so `vfund/live/carry.py` accrues it on
+its own path, verified bit-identical (max diff 8.7e-19 over 1,977 bars) to the
+`examples/two_engine.py` arithmetic it was extracted from.
+
+```bash
+vfund paper --two-engine --data data/live.parquet --defi-data data/live_defi.parquet \
+  --tvl-data data/live_tvl.parquet --fees-data data/live_fees.parquet \
+  --perp-data data/live_perp.parquet --funding-data data/live_funding.parquet \
+  --state data/paper_two_engine.json --start-equity 100000
+```
+
 ## The Rust core (optional)
 
 The innermost simulation loop can run natively via a [PyO3](https://pyo3.rs)
@@ -298,7 +333,7 @@ caveats, in order of severity:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 73 tests, network-free
+pytest -q          # 85 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every

@@ -115,19 +115,29 @@ def _sleeve_current_weights(bt) -> tuple[dict[str, float], float]:
     return weights, float(r.std()) or 1e-9
 
 
-def three_sleeve_book(
+def alpha_book(
     broad_panel: pl.DataFrame,
     defi_panel: pl.DataFrame,
     tvl: pl.DataFrame,
     *,
+    fees: pl.DataFrame | None = None,
     min_short_dollar_volume: float = 5_000_000,
 ) -> Book:
-    """The diversified trend + size + on-chain book, as live target weights.
+    """The diversified alpha book (trend + size + on-chain), as live weights.
 
     Each sleeve runs on its own universe via the real backtester (so the live
     book matches the validated strategy), then they're combined at equal risk
     (inverse-vol) across sleeves — coins appearing in more than one sleeve get
     the summed allocation.
+
+    Args:
+        broad_panel: broad spot universe for the trend and size sleeves.
+        defi_panel: DeFi price panel for the on-chain sleeves.
+        tvl: TVL panel (parked capital) for the TVL-divergence sleeve.
+        fees: optional protocol fee-revenue panel, stored in the TVL schema. When
+            supplied a fourth sleeve is added — revenue grew but price lagged —
+            which is the 4-sleeve book benchmarked in ``examples/four_sleeve.py``.
+        min_short_dollar_volume: hard-to-short gate for the broad sleeves.
     """
     from vfund.backtest.cross_sectional import CrossSectionalBacktester
     from vfund.strategy import CrossSectionalSize, TimeSeriesTrendEnsemble, TVLDivergence
@@ -147,6 +157,12 @@ def three_sleeve_book(
         CrossSectionalBacktester(defi_panel, TVLDivergence(60), rebalance_every=7,
                                  top_k=5, tvl=tvl, **common),
     ]
+    if fees is not None:
+        # Same divergence logic, shorter window, driven by revenue not TVL.
+        sleeves.append(
+            CrossSectionalBacktester(defi_panel, TVLDivergence(30), rebalance_every=7,
+                                     top_k=5, tvl=fees, **common)
+        )
     weights, vols, asof = [], [], None
     for bt in sleeves:
         w, v = _sleeve_current_weights(bt)
@@ -166,6 +182,22 @@ def three_sleeve_book(
     arr = np.array(list(combined.values()))
     return Book(weights=combined, asof=asof, gross=float(np.abs(arr).sum()),
                 net=float(arr.sum()))
+
+
+def three_sleeve_book(
+    broad_panel: pl.DataFrame,
+    defi_panel: pl.DataFrame,
+    tvl: pl.DataFrame,
+    *,
+    min_short_dollar_volume: float = 5_000_000,
+) -> Book:
+    """The 3-sleeve alpha book — :func:`alpha_book` without the fees sleeve.
+
+    Kept as a named entry point because the original forward paper account was
+    started on exactly this configuration and must keep running it unchanged.
+    """
+    return alpha_book(broad_panel, defi_panel, tvl,
+                      min_short_dollar_volume=min_short_dollar_volume)
 
 
 def format_book(book: Book) -> str:

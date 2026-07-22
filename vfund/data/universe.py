@@ -97,12 +97,17 @@ def fetch_universe(
     *,
     start: datetime | str,
     end: datetime | str | None = None,
+    futures: bool = False,
 ) -> pl.DataFrame:
-    """Fetch bars for each symbol and stack them into one long panel."""
+    """Fetch bars for each symbol and stack them into one long panel.
+
+    Set ``futures=True`` for USD-M perpetual bars instead of spot — needed to
+    build the spot/perp basis the carry sleeve trades.
+    """
     frames = []
     for sym in symbols:
         try:
-            df = fetch_klines(sym, interval, start=start, end=end)
+            df = fetch_klines(sym, interval, start=start, end=end, futures=futures)
         except Exception as exc:  # noqa: BLE001 - skip a bad symbol, keep going
             print(f"  ! skipping {sym}: {exc}")
             continue
