@@ -250,6 +250,27 @@ def cmd_paper(args) -> int:
     return 0
 
 
+def cmd_status(args) -> int:
+    from vfund.live.health import check_accounts, exit_code, format_health
+
+    accounts = {}
+    for spec in args.account or []:
+        name, _, path = spec.partition("=")
+        accounts[name if path else Path(name).stem] = path or name
+    if not accounts:
+        # Default to the two accounts the weekly task maintains.
+        accounts = {"alpha-3sleeve": "data/paper.json",
+                    "two-engine": "data/paper_two_engine.json"}
+
+    results = check_accounts(accounts)
+    print(format_health(results))
+    code = exit_code(results)
+    if code:
+        print("\nA missed update cannot be back-filled - the tracker refuses "
+              "stale gaps by design, so the data point is lost permanently.")
+    return code
+
+
 def cmd_research(args) -> int:
     bt_kwargs = dict(
         rebalance_every=args.rebalance_every,
@@ -404,6 +425,13 @@ def build_parser() -> argparse.ArgumentParser:
     fe.add_argument("--end", default=None)
     fe.add_argument("--out", required=True, help="output fees .parquet path")
     fe.set_defaults(func=cmd_fetch_fees)
+
+    # status — forward-account health (exit 1 when anything needs attention)
+    stt = sub.add_parser("status", help="check forward paper-account health")
+    stt.add_argument("--account", action="append", metavar="NAME=PATH",
+                     help="account to check (repeatable); defaults to both "
+                          "accounts the weekly task maintains")
+    stt.set_defaults(func=cmd_status)
 
     # research — cross-sectional long/short, with optional walk-forward
     r = sub.add_parser("research", help="cross-sectional long/short research")

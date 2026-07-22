@@ -1,8 +1,22 @@
-"""Generate the combined book's target weights for the latest bar.
+"""Today's target book — the weights the validated strategy says to hold now.
 
-This is the same trend+size portfolio validated in research, evaluated at the
-*end* of the panel to answer: "what should I be holding right now?" The output
-is a dict of symbol -> target weight (fraction of equity; negative = short).
+Research/live parity
+--------------------
+Every book here is produced by the **backtest engine itself**, by asking
+:class:`~vfund.backtest.cross_sectional.CrossSectionalBacktester` for its target
+weights at the final bar. Nothing re-implements the weight pipeline.
+
+That rule exists because it was once broken. ``combined_book`` used to hand-roll
+the overlays, and drifted from the engine in two ways that a reader would never
+spot: it omitted the capacity cap entirely, and it applied vol-targeting *before*
+the shortability mask instead of after. The result was a live book up to 1.75x
+too large with a capacity limit configured, and ~9% too small on the vol-targeted
+trend sleeve — every single name wrong. The backtest was honest and the live
+signal quietly disagreed with it.
+
+The engine owns the overlay chain (`scores -> shortability -> vol-target ->
+capacity`) and its order. Callers here choose *parameters*, never *steps*.
+``tests/test_parity.py`` asserts this equivalence and fails CI if it drifts again.
 """
 
 from __future__ import annotations
@@ -12,17 +26,6 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from vfund.backtest.construct import (
-    scores_to_weights,
-    short_liquidity_mask,
-    trailing_dollar_volume,
-    vol_scale_weights,
-)
-from vfund.data.intervals import bars_per_year as _bars_per_year
-from vfund.data.panel import pivot_to_wide, validate_panel
-from vfund.strategy import CrossSectionalSize, TimeSeriesTrendEnsemble
-from vfund.strategy.cross_sectional import PanelContext
-
 
 @dataclass
 class Book:
@@ -30,6 +33,27 @@ class Book:
     asof: object                # timestamp of the bar the signal is based on
     gross: float                # sum of |weights|
     net: float                  # sum of weights (net long/short tilt)
+
+
+def _engine_weights(bt) -> dict[str, float]:
+    """Target weights at the engine's final bar — the single source of truth.
+
+    Calls the engine's own ``_target_weights``, so every overlay (shortability,
+    vol-targeting, capacity) is applied exactly as it was in the backtest, in
+    the engine's order. This is the whole parity guarantee in one function.
+    """
+    C = bt.closes
+    rets = np.zeros_like(C)
+    rets[1:] = C[1:] / C[:-1] - 1.0
+    rets = np.where(np.isfinite(rets), rets, 0.0)   # ragged panels carry NaN
+    w = bt._target_weights(C.shape[0] - 1, rets)
+    return {s: float(x) for s, x in zip(bt.symbols, w) if abs(x) > 1e-9}
+
+
+def _to_book(weights: dict[str, float], asof) -> Book:
+    arr = np.array(list(weights.values())) if weights else np.zeros(0)
+    return Book(weights=weights, asof=asof,
+                gross=float(np.abs(arr).sum()), net=float(arr.sum()))
 
 
 def combined_book(
@@ -44,72 +68,65 @@ def combined_book(
     trend_weight: float = 0.5,
     min_short_dollar_volume: float | None = None,
     short_dv_lookback: int = 30,
+    capacity_aum: float | None = None,
+    max_participation: float = 0.02,
 ) -> Book:
-    """Compute the trend+size target book from the last bar of ``panel``.
+    """The trend+size target book at the last bar of ``panel``.
 
-    Pass ``min_short_dollar_volume`` to enforce the same hard-to-short constraint
-    used in validation (only short names with enough recent liquidity).
+    Both sleeves are evaluated by the backtest engine, so the book is exactly
+    what the engine would have targeted on this bar with these parameters — see
+    the module docstring on parity.
+
+    Args:
+        panel: long-format OHLCV panel.
+        size_lookback: dollar-volume window for the size sleeve.
+        vol_target: annualised vol target for the (directional) trend sleeve.
+        top_k: names per side in the size sleeve.
+        interval: bar interval, for annualising the vol target.
+        vol_lookback: trailing window used to estimate realised vol.
+        max_leverage: gross cap applied by vol-targeting.
+        trend_weight: capital split; 1.0 = trend only, 0.0 = size only.
+        min_short_dollar_volume: hard-to-short gate; ``None`` disables it.
+        short_dv_lookback: trailing window for the shortability gate.
+        capacity_aum: book size in USD for the participation cap. Must match the
+            value used in the backtest, or the live book will be sized for a
+            different amount of money than the one that was validated.
+        max_participation: max share of a name's daily volume the book may take.
     """
-    panel = validate_panel(panel)
-    # Ragged: use the true latest bar and whatever coins are tradable then, so the
-    # book reflects the current universe (delisted coins are NaN -> excluded).
-    wide = pivot_to_wide(panel, "close", drop_incomplete=False)
-    symbols = [c for c in wide.columns if c != "timestamp"]
-    closes = wide.select(symbols).to_numpy()
+    from vfund.backtest.cross_sectional import CrossSectionalBacktester
+    from vfund.strategy import CrossSectionalSize, TimeSeriesTrendEnsemble
 
-    vwide = wide.select("timestamp").join(
-        pivot_to_wide(panel, "volume", drop_incomplete=False), on="timestamp", how="left"
+    if not 0.0 <= trend_weight <= 1.0:
+        raise ValueError("trend_weight must be between 0 and 1")
+
+    common = dict(
+        rebalance_every=7, interval=interval, cost_bps=10,
+        min_short_dollar_volume=min_short_dollar_volume,
+        short_dv_lookback=short_dv_lookback,
+        capacity_aum=capacity_aum, max_participation=max_participation,
     )
-    volumes = vwide.select(symbols).fill_null(0.0).to_numpy()
-
-    i = closes.shape[0] - 1
-    ctx = PanelContext(i, closes, symbols, volumes=volumes)
-
-    # Trend sleeve: directional, vol-targeted.
-    w_trend = scores_to_weights(
-        TimeSeriesTrendEnsemble().scores(ctx), leverage=1.0, neutralize=False
+    trend_bt = CrossSectionalBacktester(
+        panel, TimeSeriesTrendEnsemble(), neutralize=False, vol_target=vol_target,
+        vol_lookback=vol_lookback, max_leverage=max_leverage, **common,
     )
-    rets = np.zeros_like(closes)
-    rets[1:] = closes[1:] / closes[:-1] - 1.0
-    rets = np.where(np.isfinite(rets), rets, 0.0)  # ragged panel may hold NaN
-    lo = max(1, i - vol_lookback + 1)
-    w_trend = vol_scale_weights(
-        w_trend, rets[lo : i + 1],
-        vol_target=vol_target, bars_per_year=_bars_per_year(interval),
-        max_leverage=max_leverage,
+    size_bt = CrossSectionalBacktester(
+        panel, CrossSectionalSize(size_lookback), top_k=top_k, **common,
     )
 
-    # Size sleeve: market-neutral, concentrated.
-    w_size = scores_to_weights(
-        CrossSectionalSize(size_lookback).scores(ctx),
-        leverage=1.0, top_k=top_k, neutralize=True,
-    )
+    w_trend = _engine_weights(trend_bt)
+    w_size = _engine_weights(size_bt)
 
-    # Hard-to-short: forbid shorts on illiquid names (can't borrow them).
-    if min_short_dollar_volume is not None:
-        dv = trailing_dollar_volume(closes, volumes, i, short_dv_lookback)
-        w_trend = short_liquidity_mask(w_trend, dv, min_short_dollar_volume)
-        w_size = short_liquidity_mask(w_size, dv, min_short_dollar_volume)
-
-    combined = trend_weight * w_trend + (1 - trend_weight) * w_size
-    weights = {s: float(w) for s, w in zip(symbols, combined) if abs(w) > 1e-6}
-    return Book(
-        weights=weights,
-        asof=wide["timestamp"][i],
-        gross=float(np.abs(combined).sum()),
-        net=float(combined.sum()),
-    )
+    combined: dict[str, float] = {}
+    for alloc, sleeve in ((trend_weight, w_trend), (1.0 - trend_weight, w_size)):
+        for s, x in sleeve.items():
+            combined[s] = combined.get(s, 0.0) + alloc * x
+    combined = {s: w for s, w in combined.items() if abs(w) > 1e-6}
+    return _to_book(combined, trend_bt.timestamps[-1])
 
 
 def _sleeve_current_weights(bt) -> tuple[dict[str, float], float]:
     """Latest-bar target weights + return volatility of one sleeve's backtester."""
-    C = bt.closes
-    rets = np.zeros_like(C)
-    rets[1:] = C[1:] / C[:-1] - 1.0
-    rets = np.where(np.isfinite(rets), rets, 0.0)
-    i = C.shape[0] - 1
-    w = bt._target_weights(i, rets)  # reuse the exact engine logic
-    weights = {s: float(x) for s, x in zip(bt.symbols, w) if abs(x) > 1e-9}
+    weights = _engine_weights(bt)
     eq = bt.run().equity_curve["equity"].to_numpy()
     r = eq[1:] / eq[:-1] - 1.0
     return weights, float(r.std()) or 1e-9
@@ -179,9 +196,7 @@ def alpha_book(
             key = s[:-4] if s.endswith("USDT") else s  # normalise BTCUSDT<->BTC
             combined[key] = combined.get(key, 0.0) + alloc * x
     combined = {s: w for s, w in combined.items() if abs(w) > 1e-6}
-    arr = np.array(list(combined.values()))
-    return Book(weights=combined, asof=asof, gross=float(np.abs(arr).sum()),
-                net=float(arr.sum()))
+    return _to_book(combined, asof)
 
 
 def three_sleeve_book(

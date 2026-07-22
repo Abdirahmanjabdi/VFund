@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-115%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-144%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -46,6 +46,8 @@ and cheaply, on paper, before any money is at risk.**
 | Survivorship bias | Ragged engine + delisted coins re-included (`KNOWN_DELISTED`) |
 | Un-executable trades | Hard-to-short gate, capacity limits, maker/fill modelling |
 | Ignoring capacity | Position caps by share of daily volume — the edge decays with size |
+| **Live book ≠ backtested book** | The live signal *is* the engine: `signal.py` asks `CrossSectionalBacktester._target_weights`, never rebuilds the overlay chain. Asserted by [`tests/test_parity.py`](tests/test_parity.py) |
+| **Silent ops failure** | `vfund status` grades account staleness and exits non-zero; the weekly task gates on it |
 
 ## Install
 
@@ -55,7 +57,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 115 tests, no network needed
+pytest -q                                          # 144 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -158,8 +160,9 @@ vfund/
 │   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
 │   └── robustness.py     Probabilistic & Deflated Sharpe, bootstraps, alpha/beta
 ├── live/            # forward trading
-│   ├── signal.py         today's target book (single / 3- / 4-sleeve alpha)
+│   ├── signal.py         today's target book - engine-computed (parity)
 │   ├── carry.py          funding-basis carry sleeve (the non-spot-weight engine)
+│   ├── health.py         account staleness ladder; `vfund status` exits non-zero
 │   └── paper.py          persistent forward paper-account tracker
 ├── microstructure/  # order book & market-making
 │   ├── orderbook.py      price-time limit order book + matching engine
@@ -372,7 +375,7 @@ caveats, in order of severity:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 115 tests, network-free
+pytest -q          # 144 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every
