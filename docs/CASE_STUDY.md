@@ -137,6 +137,47 @@ out-of-sample (0.19). The negative result is kept in `examples/stablecoin_macro.
 rather than deleted, because a research log that only records wins is a sales
 pitch, not a record.
 
+## Industrialising the search — and catching ourselves out
+
+Every strategy above was a hand-written class, which quietly bounds the research:
+if testing an idea costs code, you test few ideas. For a platform whose whole
+premise is that *most ideas die*, the throughput of killing them is the thing to
+optimise.
+
+So the factor layer was rebuilt around an operator vocabulary — `rank`, `ts_corr`,
+`delta`, `decay_linear` and friends — in which alphas are written as formulas
+rather than programs. The vocabulary is designed so **look-ahead cannot be
+expressed**: time-series operators read backwards only, `delta` refuses a
+non-positive lag, and no negative-shift operator exists. An AST purity gate
+refuses anything that routes around it — imports, `eval`, dunder access,
+reversed slices, `np.roll`. A test corrupts the future and asserts all 41
+registered alphas produce a byte-identical past.
+
+That bought the first study nobody seems to have published: **do equity
+formulaic alphas work on crypto?** 41 of them (a Kakushadze-101 subset plus
+academic proxies) on the survivorship-corrected universe, 2021–2026.
+
+The first answer was 51% alive — which is absurd. The comparable equity study
+found 5%, and these alphas are foreign to this market. Two checks followed:
+
+- A **null control** on synthetic panels with no edge by construction, to test
+  whether ranking by volatility manufactures IC on skewed returns. That
+  hypothesis was **wrong**: 0 false positives out of 41, real ICs standing 18–74×
+  clear of the null. The metric was sound.
+- The **out-of-sample split**, which did the killing: 26 alive-or-reversed
+  collapsed to **5** that held their verdict.
+
+Then the useful part. Four of those five survivors are volatility, lottery and
+illiquidity alphas — *which this repo had already tested with costs and found
+dead out-of-sample*, in the graveyard table above. Two internally consistent
+results pointing opposite ways, and both correct: the IC says these rank
+tomorrow's winners better than chance; the cost-charged gauntlet says you cannot
+collect it. They rebalance daily, and daily turnover at 10bp needs far more than
+an IC of 0.02 to clear its own costs.
+
+Reporting only the IC table would have meant publishing a result the platform's
+own machinery had already refuted. Full write-up: [CRYPTO_ALPHA_STUDY.md](CRYPTO_ALPHA_STUDY.md).
+
 ## Auditing the platform against itself
 
 Late in the project the obvious question was asked: *is any of this actually real,
@@ -162,6 +203,15 @@ in it is **down −4.5%** — published rather than quietly dropped. The market 
 *factor* drawdown (the known weakness of cross-sectional long/short in a broad
 junk rally), and historically 5% of rolling 3-week windows were this bad or worse.
 
+Leaving that account alone is the right call — restarting a forward test destroys
+it — but it meant the *best* configuration had no forward record. So a **second,
+parallel** account was opened on 2026-07-22 running the full two-engine book
+(4-sleeve alpha + funding carry). Neither will be restarted. Because the alpha
+engine is common to both, the gap between the two curves isolates what the carry
+engine actually contributes forward, instead of leaving that to a backtest to
+claim. Carry's standalone backtest Sharpe is ~5 — exactly the kind of number to
+distrust until forward data speaks.
+
 Two operational failures also surfaced immediately, which is its own lesson: the
 weekly task once marked a **stale state file** forward by 22 months while
 reporting success, and another run died because the machine was asleep at the
@@ -170,7 +220,7 @@ task). In a real fund, the ops layer fails long before the alpha does.
 
 ## What actually got built
 
-A local-first Python platform (73 tests, CI on 3.11 & 3.12), with an optional
+A local-first Python platform (115 tests, CI on 3.11 & 3.12), with an optional
 native Rust core (~77× on the hot loop). Market + perp + funding + delisted-coin +
 on-chain (TVL, fees, stablecoin supply) ingestion; an event-driven, ragged
 cross-sectional long/short engine modelling costs, short financing, shortability,
@@ -179,6 +229,25 @@ a research suite (walk-forward, robustness, Probabilistic/Deflated Sharpe,
 alpha/beta); a market-microstructure layer (order book + adverse-selection sim); a
 live signal + forward paper-trading loop; and 29 `examples/` that reproduce the
 entire journey. It's public: <https://github.com/Abdirahmanjabdi/VFund>.
+
+## Reproduce any of it
+
+Nothing here is a screenshot. Every claim above is a script in `examples/`:
+
+```bash
+pip install -e ".[dev]" && pytest -q      # 115 tests, no network
+
+python examples/hypothesis_gauntlet.py    # the graveyard: six ideas, none survive
+python examples/trend_cycle.py            # trend's crisis alpha, beta-stripped
+python examples/survivorship_check.py     # dead coins + short costs + no-borrow
+python examples/two_engine.py             # the alpha + carry book
+python examples/crypto_alpha_study.py     # 41 equity alphas on crypto + null control
+python examples/stablecoin_macro.py       # a negative result, kept on purpose
+```
+
+The data-dependent ones need panels built with `vfund fetch-universe` — see
+[EXAMPLES.md](EXAMPLES.md). `pytest tests/test_lookahead.py` re-runs the
+causality proof.
 
 ## The takeaway
 

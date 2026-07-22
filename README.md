@@ -15,7 +15,10 @@ runs a live forward paper-trading loop. The tools are open; any edge you find wi
 them is yours.
 
 📖 **Start with the [case study](docs/CASE_STUDY.md)** — the honest story of how
-this platform rigorously killed most of its own best ideas and what survived. Then
+this platform rigorously killed most of its own best ideas and what survived.
+Then the [crypto alpha study](docs/CRYPTO_ALPHA_STUDY.md) — 41 published equity
+alphas tested on crypto, where the platform caught *itself* mistaking a strong
+information coefficient for a tradable edge. Reference:
 [docs/OVERVIEW.md](docs/OVERVIEW.md) (architecture) and
 [docs/EXAMPLES.md](docs/EXAMPLES.md) (every example explained).
 
@@ -188,6 +191,36 @@ Time-series / directional: `TimeSeriesTrend`, `TimeSeriesTrendEnsemble`.
 
 Baselines: `MACrossover`, `BuyAndHold`. Writing your own is one method — see
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
+
+## Formulaic alphas
+
+Hand-writing a class per idea bounds how many hypotheses you can afford to test —
+the wrong constraint for a platform premised on most ideas dying. `vfund/factors/`
+lets an alpha be a formula instead:
+
+```python
+from vfund.factors import Panel, alpha, bench, all_alphas, panel_from_long
+from vfund.factors.operators import rank, ts_corr
+
+@alpha("my_alpha", formula="-1 * rank(ts_corr(close, volume, 10))", source="me")
+def my_alpha(p: Panel):
+    return -1.0 * rank(ts_corr(p.close, p.volume, 10))
+
+print(bench(all_alphas(), panel_from_long(my_panel)))
+```
+
+**Look-ahead is inexpressible in the vocabulary**: `ts_*` operators read backwards
+only, `delta`/`delay` refuse a non-positive lag, and no negative-shift operator
+exists. An AST purity gate (`vfund/factors/purity.py`) rejects anything routing
+around it — imports, `eval`, dunder access, reversed slices, `np.roll`, method
+calls — and runs at registration, so a peeking alpha fails at import rather than
+producing a flattering backtest. A test corrupts the future and asserts all 41
+bundled alphas produce a byte-identical past.
+
+Ships with 41 alphas (a Kakushadze-101 OHLCV subset + academic proxies) and an IC
+bench with alive/reversed/dead categorisation. Operator semantics follow
+[HKUDS/Vibe-Trading](https://github.com/HKUDS/Vibe-Trading)'s Alpha Zoo (MIT);
+implementations are independent (pandas there, numpy here).
 
 ## The research workflow
 
