@@ -3,7 +3,7 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-144%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-167%20passing-brightgreen)](tests/)
 
 **An open-source quant research & trading platform for crypto — built around a
 single principle: make it as hard as possible to fool yourself.**
@@ -159,11 +159,13 @@ vfund/
 │   ├── splits.py         time-series train/test + walk-forward windows
 │   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
 │   └── robustness.py     Probabilistic & Deflated Sharpe, bootstraps, alpha/beta
-├── live/            # forward trading
+├── live/            # forward trading & execution
 │   ├── signal.py         today's target book - engine-computed (parity)
 │   ├── carry.py          funding-basis carry sleeve (the non-spot-weight engine)
 │   ├── health.py         account staleness ladder; `vfund status` exits non-zero
-│   └── paper.py          persistent forward paper-account tracker
+│   ├── paper.py          persistent forward paper-account tracker
+│   ├── exchange.py       Binance USD-M Futures API client (HMAC-SHA256, testnet/mainnet)
+│   └── execute.py        reconciliation-based executor with full safety model
 ├── microstructure/  # order book & market-making
 │   ├── orderbook.py      price-time limit order book + matching engine
 │   └── simulator.py      market-making sim with adverse selection
@@ -264,6 +266,13 @@ vfund research --data uni.parquet --funding f.parquet --hypothesis carry --walkf
 vfund signal --data data/uni.parquet                   # today's target book
 vfund paper  --data data/uni.parquet --state data/paper.json --start-equity 100000
 vfund paper  --three-sleeve --data uni.parquet --defi-data defi.parquet --tvl-data tvl.parquet ...
+
+# Execution (testnet or mainnet)
+vfund execute --data data/live.parquet --three-sleeve \
+  --defi-data data/live_defi.parquet --tvl-data data/live_tvl.parquet --plan-only
+vfund execute ... --testnet                           # dry run against testnet (default)
+vfund execute ... --testnet --live                    # place real orders on testnet
+vfund execute ... --mainnet --live                    # REAL MONEY (use with extreme caution)
 ```
 
 Run `vfund <command> -h` for full options.
@@ -284,17 +293,17 @@ accumulate a genuine, untouched out-of-sample record. The live signal runs the
 | 2026-07-01 | $99,917 | −0.08% |
 | 2026-07-08 | $99,906 | −0.09% |
 | 2026-07-13 | $98,301 | −1.70% |
-| 2026-07-22 | $95,487 | **−4.51%** |
+| 2026-07-22 | $95,487 | −4.51% (trough) |
+| 2026-08-03 | $97,284 | −2.72% |
+| 2026-08-10 | $102,085 | +2.08% |
+| 2026-08-17 | $102,892 | **+2.89%** |
 
-It is currently **in a drawdown**, and that is published here rather than quietly
-omitted. Context: over the same window the majors rallied **+8.1%**, and the book
-stayed market-neutral (net exposure +0.008) — so this is a *factor* drawdown, the
-known weakness of cross-sectional long/short in a broad junk rally, not a
-market-tracking loss. Historically **5% of rolling 3-week windows were this bad
-or worse** (worst: −13.6%), so it is well inside normal variance.
-
-Three weeks proves nothing either way. The record is left untouched and unadjusted
-— which is the entire point.
+Seven weeks in. The book hit a −4.5% trough at week 3 — a factor drawdown during
+a junk rally where majors ran +8% while the book stayed market-neutral. It
+recovered fully by week 6 and is now **+2.89% since inception**. Seven weeks is
+still short; historically 5% of rolling 3-week windows were ≤ −4.5% (worst
+−13.6%), so the drawdown was within normal variance and the recovery is consistent
+with the backtested behaviour. The record is left untouched and unadjusted.
 
 ### A second account, on the leading candidate
 
@@ -314,6 +323,20 @@ backtest Sharpe is ~5, which is exactly the kind of number that should be
 distrusted until forward data speaks: it comes from low volatility that masks
 thin-margin and squeeze tail-risk (see `examples/carry_liquidation.py`).
 
+The two-engine account after 4 weekly updates:
+
+| Date | Equity | Alpha pot | Carry pot | Since start |
+|---|---|---|---|---|
+| 2026-07-22 | $99,961 | $49,961 | $50,000 | −0.04% |
+| 2026-08-03 | $101,006 | $50,503 | $50,503 | +1.01% |
+| 2026-08-10 | $103,068 | $51,534 | $51,534 | +3.07% |
+| 2026-08-17 | $103,358 | $51,679 | $51,679 | **+3.36%** |
+
+Both engines are contributing positively. The carry pot has kept pace with
+the alpha pot after rebalancing — the blend is working as designed. Four weeks
+is even less conclusive than seven, but the early trajectory is consistent
+with the backtest.
+
 Carry cannot be expressed as spot weights — it is a long-spot / short-perp pair
 whose return is `funding − basis change` — so `vfund/live/carry.py` accrues it on
 its own path, verified bit-identical (max diff 8.7e-19 over 1,977 bars) to the
@@ -324,6 +347,36 @@ vfund paper --two-engine --data data/live.parquet --defi-data data/live_defi.par
   --tvl-data data/live_tvl.parquet --fees-data data/live_fees.parquet \
   --perp-data data/live_perp.parquet --funding-data data/live_funding.parquet \
   --state data/paper_two_engine.json --start-equity 100000
+```
+
+## Execution layer
+
+When the forward test convinces, `vfund execute` turns the same target book into
+real exchange orders on Binance USD-M Perpetual Futures. It is designed so that
+every failure mode is survivable:
+
+| Safety layer | How it works |
+|---|---|
+| **Dry run default** | No orders unless you pass `--live` explicitly |
+| **Plan-only mode** | `--plan-only` shows the full order plan using public prices — no API keys or futures access needed |
+| **Kill switch** | `touch data/KILLSWITCH` halts all execution instantly; `rm` resumes |
+| **Reconciliation-based** | Reads current positions, diffs against target, places only the delta — idempotent and crash-safe |
+| **Pre-flight checks** | Max gross exposure (2×), max single position (15%), min order size ($6), zero-equity guard |
+| **Leverage cap** | Sets exchange-side max leverage to 3× on every symbol before any order |
+| **Append-only log** | Every order, fill, skip, and error is written to `data/execution_log.jsonl` before the next order |
+| **Closes first** | Reducing orders execute before opening orders to minimise risk during rebalance |
+
+API keys are read from environment variables only — never from CLI arguments,
+config files, or source code. Testnet and mainnet use separate key pairs.
+
+```bash
+# Plan only (no keys needed)
+python -m vfund execute --data data/live.parquet --three-sleeve \
+  --defi-data data/live_defi.parquet --tvl-data data/live_tvl.parquet --plan-only
+
+# Testnet (free fake money, requires Binance futures testnet access)
+export BINANCE_TESTNET_KEY="..."  BINANCE_TESTNET_SECRET="..."
+python -m vfund execute ... --testnet --live
 ```
 
 ## The Rust core (optional)
@@ -360,22 +413,24 @@ the first honest backtest to the full composed book. **Each is explained in
 The results are backtested and out-of-sample, **not** live-confirmed. Honest
 caveats, in order of severity:
 
-1. **No meaningful live track record.** The forward account is three weeks old and
-   currently down −4.5% — far too short to conclude anything in either direction.
-   Every backtested number predates the strategy's own design. Months are needed.
+1. **Short live track record.** The forward accounts are 7 weeks (3-sleeve, +2.9%)
+   and 4 weeks (two-engine, +3.4%) old — early and positive, but far too short to
+   confirm an edge. Every backtested number predates the strategy's own design.
+   Months of consistent forward data are needed before anything is proven.
 2. **Survivorship is reduced, not eliminated.** Dead coins are re-included, but
    the current-liquid universe still has selection bias.
 3. **Multiple testing.** Deflated Sharpe adjusts for configs in one study, not the
    whole research search — true significance is lower.
 4. **Capacity.** The small-cap edge caps at ~$2–5M; it's not a large-AUM strategy.
-5. **Execution realism.** Real slippage, borrow availability, and (for the carry)
+5. **Execution realism.** The execution layer is built and tested but not yet
+   live-proven. Real slippage, borrow availability, and (for the carry)
    intraday liquidation will shave results further.
 
 ## Develop
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 144 tests, network-free
+pytest -q          # 167 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every

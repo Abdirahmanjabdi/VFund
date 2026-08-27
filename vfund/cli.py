@@ -250,6 +250,88 @@ def cmd_paper(args) -> int:
     return 0
 
 
+def cmd_execute(args) -> int:
+    import os
+
+    # --mainnet overrides the testnet default.
+    if getattr(args, "mainnet", False):
+        args.testnet = False
+
+    # Compute the target book (same signal the paper tracker uses).
+    if args.three_sleeve:
+        from vfund.data.onchain import load_tvl
+        from vfund.data.panel import load_panel
+        from vfund.live.signal import three_sleeve_book
+
+        if not args.defi_data or not args.tvl_data:
+            raise ValueError("--three-sleeve requires --defi-data and --tvl-data")
+        broad = _load_clean(args.data)
+        book = three_sleeve_book(
+            broad, load_panel(args.defi_data), load_tvl(args.tvl_data),
+            min_short_dollar_volume=args.min_short_dv,
+        )
+    else:
+        from vfund.live.signal import combined_book
+
+        book = combined_book(
+            _load_clean(args.data), interval=args.interval,
+            min_short_dollar_volume=args.min_short_dv,
+        )
+
+    from vfund.live.signal import format_book
+    print(format_book(book))
+
+    # --plan-only: show the execution plan using public prices + paper equity.
+    if getattr(args, "plan_only", False):
+        from vfund.live.execute import plan_only
+
+        equity = args.equity
+        if equity is None:
+            paper_path = Path("data/paper.json")
+            if paper_path.exists():
+                import json
+                with open(paper_path) as f:
+                    equity = json.load(f).get("equity", 100_000.0)
+                print(f"  (using paper tracker equity: ${equity:,.2f})")
+            else:
+                equity = 100_000.0
+                print(f"  (using default equity: ${equity:,.2f})")
+
+        plan_only(book, equity)
+        return 0
+
+    # Full exchange mode — requires API keys.
+    from vfund.live.exchange import BinanceClient
+    from vfund.live.execute import run as execute_run
+
+    if args.testnet:
+        key = os.environ.get("BINANCE_TESTNET_KEY", "")
+        secret = os.environ.get("BINANCE_TESTNET_SECRET", "")
+        if not key or not secret:
+            raise ValueError(
+                "set BINANCE_TESTNET_KEY and BINANCE_TESTNET_SECRET "
+                "environment variables (see 'vfund execute -h')"
+            )
+    else:
+        key = os.environ.get("BINANCE_API_KEY", "")
+        secret = os.environ.get("BINANCE_API_SECRET", "")
+        if not key or not secret:
+            raise ValueError(
+                "set BINANCE_API_KEY and BINANCE_API_SECRET "
+                "environment variables"
+            )
+
+    dry_run = not args.live
+    if not dry_run:
+        env = "MAINNET" if not args.testnet else "TESTNET"
+        print(f"\n  ** LIVE EXECUTION on {env} — real orders will be placed **")
+
+    with BinanceClient(key, secret, testnet=args.testnet) as client:
+        report = execute_run(client, book, dry_run=dry_run)
+
+    return 1 if report.n_failed > 0 else 0
+
+
 def cmd_status(args) -> int:
     from vfund.live.health import check_accounts, exit_code, format_health
 
@@ -489,6 +571,40 @@ def build_parser() -> argparse.ArgumentParser:
     pap.add_argument("--carry-weight", type=float, default=0.5,
                      help="fraction of capital in the carry engine (default 0.5)")
     pap.set_defaults(func=cmd_paper)
+
+    # execute — place orders on Binance (testnet or mainnet)
+    ex = sub.add_parser(
+        "execute",
+        help="execute the target book on Binance USD-M Futures",
+        description=(
+            "Compute the target book, diff it against current exchange positions, "
+            "and place market orders to rebalance. Defaults to DRY RUN (no orders "
+            "placed). Pass --live to actually trade. API keys are read from "
+            "environment variables:\n"
+            "  testnet: BINANCE_TESTNET_KEY, BINANCE_TESTNET_SECRET\n"
+            "  mainnet: BINANCE_API_KEY, BINANCE_API_SECRET"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ex.add_argument("--data", required=True, help="panel .parquet path (refetch to advance)")
+    ex.add_argument("--three-sleeve", action="store_true",
+                    help="execute the diversified trend+size+on-chain book")
+    ex.add_argument("--defi-data", help="DeFi price panel .parquet (for --three-sleeve)")
+    ex.add_argument("--tvl-data", help="TVL .parquet (for --three-sleeve)")
+    ex.add_argument("--interval", default="1d")
+    ex.add_argument("--min-short-dv", type=float, default=5_000_000,
+                    help="min trailing $/day to short a name (hard-to-short gate)")
+    ex.add_argument("--testnet", action="store_true", default=True,
+                    help="use Binance testnet (default; free fake money)")
+    ex.add_argument("--mainnet", action="store_true",
+                    help="use Binance mainnet (REAL money — use with extreme caution)")
+    ex.add_argument("--live", action="store_true",
+                    help="actually place orders (default is dry run — shows the plan only)")
+    ex.add_argument("--plan-only", action="store_true",
+                    help="show execution plan using public prices — no API keys needed")
+    ex.add_argument("--equity", type=float, default=None,
+                    help="assumed account equity in USDT (default: read from paper tracker)")
+    ex.set_defaults(func=cmd_execute, testnet=True)
 
     return parser
 

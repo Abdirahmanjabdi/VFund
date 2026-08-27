@@ -123,13 +123,18 @@ every time research improves destroys the thing that makes it worth running.
 | 2026-07-01 | $99,917 | −0.08% |
 | 2026-07-08 | $99,906 | −0.09% |
 | 2026-07-13 | $98,301 | −1.70% |
-| 2026-07-22 | $95,487 | **−4.51%** |
+| 2026-07-22 | $95,487 | −4.51% (trough) |
+| 2026-08-03 | $97,284 | −2.72% |
+| 2026-08-10 | $102,085 | +2.08% |
+| 2026-08-17 | $102,892 | **+2.89%** |
 
-Read: a **factor drawdown**, not a broken book. Majors rose +8.1% over the same
-window while the book held market-neutral (net +0.008) — cross-sectional L/S is
-known to bleed in broad junk rallies where shorted small-caps outrun the longs.
-Historically 5% of rolling 3-week windows were ≤ −4.5% (worst −13.6%), against a
-backtested max drawdown of −21%. Three weeks is noise; the record stands untouched.
+Read: the −4.5% trough at week 3 was a **factor drawdown**, not a broken book.
+Majors rose +8.1% over that window while the book stayed market-neutral (net
++0.008) — cross-sectional L/S bleeds in broad junk rallies where shorted
+small-caps outrun the longs. Historically 5% of rolling 3-week windows were
+≤ −4.5% (worst −13.6%), so it was within normal variance. The book recovered
+fully by week 6 and is now **+2.89%** since inception. Seven weeks is still
+noise — the record stands untouched.
 
 Ops failures caught in week one (in a real fund these break before the alpha does):
 - **Stale-state bug** — the task marked a leftover 2024 test file forward by 22

@@ -32,6 +32,10 @@ rust/target/
 .idea/
 .vscode/
 
+# Execution artifacts — logs contain fill prices and account state.
+execution_log.jsonl
+KILLSWITCH
+
 # Private notes — never publish (the personal guide lives outside the repo)
 *_PRIVATE*.md
 paper*.json
