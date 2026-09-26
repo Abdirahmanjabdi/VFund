@@ -3,24 +3,32 @@
 [![CI](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdirahmanjabdi/VFund/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-167%20passing-brightgreen)](tests/)
+[![tests](https://img.shields.io/badge/tests-290%20passing-brightgreen)](tests/)
 
-**An open-source quant research & trading platform for crypto — built around a
-single principle: make it as hard as possible to fool yourself.**
+**An open-source quant research & trading platform — built around a single
+principle: make it as hard as possible to fool yourself.**
 
 VFund is a local-first Python toolkit (with an optional Rust core) for systematic
-trading research. It ingests market data, backtests strategies *without the usual
-self-deception*, validates them out-of-sample, models real-world frictions, and
-runs a live forward paper-trading loop. The tools are open; any edge you find with
-them is yours.
+trading research across crypto, FX, commodities and equities. It ingests market
+data, backtests strategies *without the usual self-deception*, validates them
+out-of-sample, models real-world frictions, and runs a live forward paper-trading
+loop. The tools are open; any edge you find with them is yours.
 
 📖 **Start with the [case study](docs/CASE_STUDY.md)** — the honest story of how
 this platform rigorously killed most of its own best ideas and what survived.
 Then the [crypto alpha study](docs/CRYPTO_ALPHA_STUDY.md) — 41 published equity
 alphas tested on crypto, where the platform caught *itself* mistaking a strong
-information coefficient for a tradable edge. Reference:
+information coefficient for a tradable edge. Then the
+[multi-market study](docs/MULTI_MARKET_STUDY.md) — 35 hypotheses across crypto,
+FX and gold, **all of which failed**, including one that passed every statistical
+test before a leakage audit destroyed it. Reference:
 [docs/OVERVIEW.md](docs/OVERVIEW.md) (architecture) and
 [docs/EXAMPLES.md](docs/EXAMPLES.md) (every example explained).
+
+> **What this repo is honest about.** Most of the research here produced negative
+> results, and they are documented as prominently as the positive ones —
+> including retracted findings and my own bugs. A platform whose purpose is to
+> resist self-deception has no business hiding the times it failed.
 
 ---
 
@@ -57,7 +65,7 @@ cd VFund
 python -m venv .venv && . .venv/Scripts/activate   # Windows
 # source .venv/bin/activate                        # macOS/Linux
 pip install -e ".[dev]"
-pytest -q                                          # 144 tests, no network needed
+pytest -q                                          # 290 tests, no network needed
 ```
 
 The optional native Rust core (a ~77× faster simulation loop) is separate; see
@@ -109,6 +117,41 @@ out-of-sample results with known optimism. The only real test is the live forwar
 account below. See [docs/CASE_STUDY.md](docs/CASE_STUDY.md) and the
 [limitations](#known-limitations).
 
+## What has been tested and rejected
+
+Most of this repo's research produced negative results. They are listed because
+a rejected hypothesis with a measured reason is more useful than an untested one,
+and because the failure modes generalise. Full detail in the
+[multi-market study](docs/MULTI_MARKET_STUDY.md).
+
+| Family | Verdict |
+|---|---|
+| Derivative microstructure factors (5, crypto perps) | 4 show no predictive information; the 5th has the **opposite sign** to its hypothesis and no tradeable spread |
+| Informed-vs-crowd positioning divergence | Reversed and weak — the mechanism is not in the data |
+| Four-quadrant flow decomposition (price × ΔOI) | Dies once controlled for reversal |
+| Illiquid-tail reversal | Rank IC t = 9.48, **mean spread t = 1.51** — unmonetisable |
+| Delta-neutral funding carry | Real until 2024; **−2.0% over the last six months** |
+| Month-end FX hedge rebalancing | Real (t = 3.84), **decayed after the 2015 fix reform** |
+| 106 calendar/session buckets (FX, gold) | None survive family-wise correction |
+| Trend following on GBPUSD / gold | OOS Sharpe −0.24 / 0.26 — gold **loses to buy-and-hold** |
+| Gold-complex pair reversion | Stale-price artefact — dies at a one-day skip |
+| OI-verified liquidity sweep | **Retracted — lookahead bias** |
+| Gold variance risk premium | **Real** (t = 8.24, 79% hit rate), with caveats |
+
+Two findings from those failures now shape the rest of the platform:
+
+**Rank IC is not a screen.** It endorsed a factor at t = 9.48 whose tradeable
+decile spread was t = 1.51. Rank correlation is blind to magnitude, and in a
+fat-tailed market magnitude *is* the P&L. `research/ic.py` gates on the mean
+decile spread and flags the mean/median sign disagreement that identifies an
+unmonetisable factor.
+
+**Cross-validation does not protect against leakage.** One signal cleared
+Bonferroni across 32 configurations, a tail check, breadth across 14 of 15
+instruments, *and* a train/test split — then failed a leakage audit outright. All
+of those tests ask whether a pattern is real; a leak makes it genuinely real, and
+it replicates in every fold. The audit is now a gate, not an afterthought.
+
 ## Verification: the past cannot see the future
 
 The failure that invalidates *every* number above is look-ahead bias. So it's
@@ -138,6 +181,7 @@ vfund/
 │   ├── ingest.py         Binance spot & perp klines (paginated)
 │   ├── universe.py       liquid universes, funding, delisted coins (KNOWN_DELISTED)
 │   ├── onchain.py        DefiLlama TVL, fees & stablecoin supply (on-chain data)
+│   ├── yahoo.py          FX, commodity futures, equities & indices (all markets)
 │   ├── synthetic.py      GBM price/panel generators (offline demo & tests)
 │   └── storage.py        Parquet read/write
 ├── strategy/        # signals
@@ -158,7 +202,18 @@ vfund/
 ├── research/        # validation
 │   ├── splits.py         time-series train/test + walk-forward windows
 │   ├── walkforward.py    walk-forward optimisation (in-sample select, OOS judge)
+│   ├── ic.py             Newey-West IC + the mean-spread gate rank IC cannot give
+│   ├── seasonality.py    calendar/session buckets w/ family-wise correction
 │   └── robustness.py     Probabilistic & Deflated Sharpe, bootstraps, alpha/beta
+├── deriv_alpha/     # derivative microstructure (tested; see study — mostly dead)
+│   ├── vision.py         deep open-interest history (the REST endpoint caps at 30d)
+│   ├── crowding.py       OI acceleration, corrected sign
+│   ├── flow.py           four-quadrant price × ΔOI decomposition
+│   ├── illiquid.py       liquidity-provision reversal in the thin tail
+│   ├── tiers.py          informed-vs-crowd positioning divergence
+│   └── factors.py, composer.py, regime.py, markets.py, collector.py
+├── vol/             # volatility risk premium
+│   └── vrp.py            implied-vs-realised premium, tail capping, sizing
 ├── live/            # forward trading & execution
 │   ├── signal.py         today's target book - engine-computed (parity)
 │   ├── carry.py          funding-basis carry sleeve (the non-spot-weight engine)
@@ -177,6 +232,15 @@ vfund/
 - **Binance spot klines** — OHLCV for any pair (`vfund fetch` / `fetch-universe`).
 - **Binance perpetual klines** — `fetch_klines(..., futures=True)` (for basis).
 - **Binance funding rates** — perp funding history (`vfund fetch-funding`).
+- **Binance Vision archive** — deep **open-interest** history plus participant-tier
+  long/short ratios and taker flow, back to 2020-09 (`vfund.deriv_alpha.vision`).
+  The obvious REST endpoint (`openInterestHist`) is hard-capped at **30 days** and
+  rejects older requests outright; this routes around it.
+- **Yahoo Finance** — FX pairs, commodity futures, equity tickers and indices
+  (`vfund.data.yahoo`). Daily history is deep given explicit date bounds; hourly
+  caps at ~730 days and finer intervals at ~60. Asking for `range=max` with a
+  daily interval silently returns *monthly* bars, which is documented in the
+  module because it is an easy way to run a study on the wrong data.
 - **Delisted coins** — Binance still serves klines for delisted symbols; a curated
   `KNOWN_DELISTED` list re-includes dead coins (LUNC, SRM, WAVES, …) to fix
   survivorship bias.
@@ -196,6 +260,13 @@ Time-series / directional: `TimeSeriesTrend`, `TimeSeriesTrendEnsemble`.
 
 Baselines: `MACrossover`, `BuyAndHold`. Writing your own is one method — see
 [docs/OVERVIEW.md](docs/OVERVIEW.md).
+
+Derivative microstructure (`vfund/deriv_alpha/`) — **all tested, all rejected**,
+retained as documented negative results: `OIPriceDivergence`, `CrowdingPressure`,
+`LiquidationBounce`, `FundingMomentum`, `OIAcceleration`, `CrowdingAcceleration`,
+`TierDivergence`, `FlowConfirmation`, `ForcedFlowReversal`, `IlliquidReversal`.
+Each carries its measured result in its docstring. See the
+[multi-market study](docs/MULTI_MARKET_STUDY.md).
 
 ## Formulaic alphas
 
@@ -291,19 +362,27 @@ accumulate a genuine, untouched out-of-sample record. The live signal runs the
 | Date | Equity | Since start |
 |---|---|---|
 | 2026-07-01 | $99,917 | −0.08% |
-| 2026-07-08 | $99,906 | −0.09% |
 | 2026-07-13 | $98,301 | −1.70% |
-| 2026-07-22 | $95,487 | −4.51% (trough) |
-| 2026-08-03 | $97,284 | −2.72% |
+| 2026-07-22 | $95,487 | −4.51% |
 | 2026-08-10 | $102,085 | +2.08% |
-| 2026-08-17 | $102,892 | **+2.89%** |
+| 2026-08-17 | $102,892 | **+2.89% (peak)** |
+| 2026-08-31 | $96,399 | −3.60% |
+| 2026-09-04 | $94,649 | **−5.35% (trough)** |
+| 2026-09-16 | $94,798 | −5.20% |
+| 2026-09-19 | $96,419 | −3.58% |
+| 2026-09-26 | $98,181 | **−1.82%** |
 
-Seven weeks in. The book hit a −4.5% trough at week 3 — a factor drawdown during
-a junk rally where majors ran +8% while the book stayed market-neutral. It
-recovered fully by week 6 and is now **+2.89% since inception**. Seven weeks is
-still short; historically 5% of rolling 3-week windows were ≤ −4.5% (worst
-−13.6%), so the drawdown was within normal variance and the recovery is consistent
-with the backtested behaviour. The record is left untouched and unadjusted.
+Thirteen weeks in, and **still below water**. The book peaked at +2.89% in
+mid-August, then gave back 8.0 points over the following three weeks to a −5.35%
+trough on 04 Sep, and has recovered in three consecutive up weeks to −1.82%. It
+is currently 4.6% off its peak.
+
+Two drawdowns now, both survived: −4.5% at week 3 (a junk rally where majors ran
++8% while the book stayed market-neutral) and −5.4% at week 10. Historically 5%
+of rolling 3-week windows were ≤ −4.5% with a worst of −13.6%, so both sit inside
+normal variance — but thirteen weeks of a net-negative forward record is exactly
+the kind of result that should be reported plainly rather than framed around the
+peak. The record is left untouched and unadjusted.
 
 ### A second account, on the leading candidate
 
@@ -323,19 +402,36 @@ backtest Sharpe is ~5, which is exactly the kind of number that should be
 distrusted until forward data speaks: it comes from low volatility that masks
 thin-margin and squeeze tail-risk (see `examples/carry_liquidation.py`).
 
-The two-engine account after 4 weekly updates:
+The two-engine account after 9 updates:
 
-| Date | Equity | Alpha pot | Carry pot | Since start |
-|---|---|---|---|---|
-| 2026-07-22 | $99,961 | $49,961 | $50,000 | −0.04% |
-| 2026-08-03 | $101,006 | $50,503 | $50,503 | +1.01% |
-| 2026-08-10 | $103,068 | $51,534 | $51,534 | +3.07% |
-| 2026-08-17 | $103,358 | $51,679 | $51,679 | **+3.36%** |
+| Date | Equity | Since start |
+|---|---|---|
+| 2026-07-22 | $99,961 | −0.04% |
+| 2026-08-10 | $103,068 | +3.07% |
+| 2026-08-17 | $103,358 | **+3.36% (peak)** |
+| 2026-08-31 | $99,839 | −0.16% |
+| 2026-09-04 | $98,980 | −1.02% |
+| 2026-09-16 | $98,701 | **−1.30% (trough)** |
+| 2026-09-19 | $99,721 | −0.28% |
+| 2026-09-26 | $101,007 | **+1.01%** |
 
-Both engines are contributing positively. The carry pot has kept pace with
-the alpha pot after rebalancing — the blend is working as designed. Four weeks
-is even less conclusive than seven, but the early trajectory is consistent
-with the backtest.
+Ten weeks in and **marginally positive**, having recovered from a −1.30% trough.
+It is 2.3% off its August peak.
+
+**What the comparison actually shows.** The two accounts share the same alpha
+engine, so the gap between the curves is the closest available read on what carry
+contributes forward. Over the drawdown it is consistent and in carry's favour:
+the two-engine book gave up upside in the August rally (+3.07% vs the alpha
+book's +2.08% — actually ahead, since carry also rose) and then lost far less on
+the way down (−1.30% trough vs −5.35%). As of today the spread is **2.8 points**
+in the blend's favour. That is the behaviour the 50/50 blend was designed for, on
+a sample far too short to be conclusive.
+
+One caveat on reading the state files: `alpha_equity` and `carry_equity` are
+rebalanced to exactly half of total at every update, so those fields track the
+blend rather than each engine's standalone contribution. Per-engine attribution
+would need the sleeves tracked separately, which is not currently done. Carry's
+standalone backtest Sharpe of ~5 therefore remains untested forward in isolation.
 
 Carry cannot be expressed as spot weights — it is a long-spot / short-perp pair
 whose return is `funding − basis change` — so `vfund/live/carry.py` accrues it on
@@ -395,7 +491,7 @@ short-horizon / market-making edges (like reversal) that die as a taker.
 
 ## Examples
 
-29 runnable scripts in `examples/` reproduce the entire research journey, from
+32 runnable scripts in `examples/` reproduce the entire research journey, from
 the first honest backtest to the full composed book. **Each is explained in
 [docs/EXAMPLES.md](docs/EXAMPLES.md).** Highlights:
 
@@ -407,30 +503,43 @@ the first honest backtest to the full composed book. **Each is explained in
 - `two_engine.py` — the combined alpha + carry book
 - `crypto_alpha_study.py` — 41 equity alphas on crypto, with a null control
 - `full_book.py` — the full composed book (4 alpha sleeves + carry + macro)
+- `deriv_alpha_study.py` — derivative microstructure factors (a negative result)
+- `gold_vrp_study.py` — the gold variance risk premium, with its tail arithmetic
 
 ## Known limitations
 
 The results are backtested and out-of-sample, **not** live-confirmed. Honest
 caveats, in order of severity:
 
-1. **Short live track record.** The forward accounts are 7 weeks (3-sleeve, +2.9%)
-   and 4 weeks (two-engine, +3.4%) old — early and positive, but far too short to
-   confirm an edge. Every backtested number predates the strategy's own design.
-   Months of consistent forward data are needed before anything is proven.
-2. **Survivorship is reduced, not eliminated.** Dead coins are re-included, but
+1. **The forward record is negative or flat, not positive.** Thirteen weeks in,
+   the 3-sleeve account is **−1.8%** and the two-engine account **+1.0%** — both
+   below their August peaks. Every backtested number predates the strategy's own
+   design. Nothing here is confirmed, and the forward data so far does not
+   support the backtested CAGR.
+2. **Leakage is the failure mode that statistics will not catch.** One finding in
+   this repo passed Bonferroni, a tail check, breadth testing *and* an
+   out-of-sample split before a leakage audit destroyed it (see the
+   [multi-market study](docs/MULTI_MARKET_STUDY.md)). Cross-validation defends
+   against overfitting, not against future information inside an input.
+3. **Survivorship is reduced, not eliminated.** Dead coins are re-included, but
    the current-liquid universe still has selection bias.
-3. **Multiple testing.** Deflated Sharpe adjusts for configs in one study, not the
-   whole research search — true significance is lower.
-4. **Capacity.** The small-cap edge caps at ~$2–5M; it's not a large-AUM strategy.
-5. **Execution realism.** The execution layer is built and tested but not yet
+4. **Multiple testing across the whole search.** Deflated Sharpe adjusts for
+   configs within one study, not for the ~35 hypotheses tried across the project.
+   True significance is lower than any single study reports.
+5. **Capacity.** The small-cap edge caps at ~$2–5M; it's not a large-AUM strategy.
+6. **Execution realism.** The execution layer is built and tested but not yet
    live-proven. Real slippage, borrow availability, and (for the carry)
    intraday liquidation will shave results further.
+7. **Carry has decayed.** Standalone funding-basis carry measured **−2.0% over the
+   last six months** as institutional basis capital arrived. Its backtested
+   Sharpe of ~5 is a historical artefact of a period that has ended, and the
+   forward two-engine account has never isolated it.
 
 ## Develop
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 167 tests, network-free
+pytest -q          # 290 tests, network-free
 ```
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12 for every
